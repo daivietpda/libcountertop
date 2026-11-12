@@ -503,7 +503,7 @@ mode.native: Native
 mode.tessera: Tessera
 mode.tessera_native: Tessera native
 mode.firmware: Tessera
-mode.lovelace: Home Assistant
+mode.lovelace: HA
 mode.rings: Rings
 rings.look: Look
 rings.look.wheel: Wheel

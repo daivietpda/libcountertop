@@ -504,7 +504,7 @@ mode.native: Nativa
 mode.tessera: Tessera
 mode.tessera_native: Tessera nativa
 mode.firmware: Tessera
-mode.lovelace: Home Assistant
+mode.lovelace: HA
 mode.rings: Anelli
 rings.look: Aspetto
 rings.look.wheel: Ruota
