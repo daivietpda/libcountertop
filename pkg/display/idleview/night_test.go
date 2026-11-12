@@ -75,12 +75,12 @@ func TestAWakeEndsTheNightOnTheDashboard(t *testing.T) {
 }
 
 func TestLightBackWakesToTheSaverAndRestartsTheWait(t *testing.T) {
-	r, lux := darkRig(t, schema.NightDim, schema.Delay1m)
+	r, lux := darkRig(t, schema.NightClock, schema.Delay1m)
 	r.still = time.Minute + time.Second
 	r.step()
 	r.saverRanFor(r.store.Get().NightAfter.After() + time.Second)
 	r.step()
-	r.nightIs(t, schema.NightDim)
+	r.nightIs(t, schema.NightClock)
 
 	*lux = 100
 	r.step()
@@ -129,6 +129,56 @@ func TestWithoutASaverNightStandsInForIt(t *testing.T) {
 		t.Fatal("night did not bring the screen down")
 	}
 	r.nightIs(t, schema.NightClock)
+}
+
+func TestDimLowersWhateverIsShowing(t *testing.T) {
+	r, lux := darkRig(t, schema.NightDim, schema.DelayNever)
+	wait := r.store.Get().NightAfter.After()
+
+	r.still = wait / 2
+	r.step()
+	r.nightIs(t, schema.NightNone)
+
+	r.still = wait + time.Second
+	r.step()
+	r.nightIs(t, schema.NightDim)
+	if r.shell.Visible(r.View()) {
+		t.Fatal("dim brought up the saver")
+	}
+
+	r.still = time.Second
+	r.step()
+	r.nightIs(t, schema.NightNone)
+
+	r.still = wait + time.Second
+	r.step()
+	r.nightIs(t, schema.NightDim)
+
+	*lux = 100
+	r.step()
+	r.nightIs(t, schema.NightNone)
+}
+
+func TestDimStaysOverTheSaver(t *testing.T) {
+	r, _ := darkRig(t, schema.NightDim, schema.Delay1m)
+	r.still = r.store.Get().NightAfter.After() + time.Second
+	r.step()
+	if !r.shell.Visible(r.View()) {
+		t.Fatal("the saver did not come up")
+	}
+	r.nightIs(t, schema.NightDim)
+
+	r.Wake()
+	r.still = 0
+	r.step()
+	r.nightIs(t, schema.NightNone)
+}
+
+func TestDimWaitsWhileTheScreenIsTaken(t *testing.T) {
+	r, _ := darkRig(t, schema.NightDim, schema.DelayNever)
+	r.still, r.free = time.Hour, false
+	r.step()
+	r.nightIs(t, schema.NightNone)
 }
 
 func TestNightNeedsALightReading(t *testing.T) {

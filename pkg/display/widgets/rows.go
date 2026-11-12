@@ -47,6 +47,16 @@ func (kit *Toolkit) Row(
 	head := gogui.Column(
 		gogui.ContainerCfg{Sizing: gogui.FillFit, Padding: gogui.NoPadding, Content: label},
 	)
+	key := page + "/" + id
+	stacked := r.Kind == menu.Segments && kit.stacked[key]
+	if stacked {
+		head = gogui.Column(gogui.ContainerCfg{
+			Sizing:  gogui.FillFit,
+			Padding: gogui.NoPadding,
+			Spacing: gogui.SpacingSmall,
+			Content: []gogui.View{head, kit.wrappedSegments(id, r, tap)},
+		})
+	}
 
 	content := []gogui.View{head}
 	if glyphs {
@@ -102,7 +112,9 @@ func (kit *Toolkit) Row(
 	case menu.Field, menu.Password:
 		content = append(content, render.Field(page+"/"+id, r))
 	case menu.Segments:
-		content = append(content, kit.segments(id, r, tap))
+		if !stacked {
+			content = append(content, kit.segments(id, r, tap))
+		}
 	case menu.Chevron:
 		if r.Value != "" {
 			content = append(content, gogui.Label(r.Value, Secondary()))
@@ -133,6 +145,9 @@ func (kit *Toolkit) Row(
 		Radius:   gogui.RadiusMedium,
 		Disabled: r.Dim,
 		Content:  content,
+	}
+	if r.Kind == menu.Segments {
+		cfg.AmendLayout = kit.fitSegments(key, r.Label, stacked)
 	}
 	kit.ListRow(&cfg, Chosen(r.Kind == menu.Toggle && r.Chosen))
 	return kit.Pressable(gogui.Row, cfg, onClick)
@@ -193,6 +208,24 @@ func (kit *Toolkit) tileLabel(id, label string, edit func()) gogui.View {
 }
 
 func (kit *Toolkit) segments(id string, r menu.Row, tap func(int)) gogui.View {
+	return gogui.Row(gogui.ContainerCfg{
+		Padding: gogui.NoPadding,
+		Spacing: gogui.SpacingSmall,
+		Content: kit.chips(id, r, tap),
+	})
+}
+
+func (kit *Toolkit) wrappedSegments(id string, r menu.Row, tap func(int)) gogui.View {
+	return gogui.Row(gogui.ContainerCfg{
+		Sizing:  gogui.FillFit,
+		Padding: gogui.NoPadding,
+		Spacing: gogui.SpacingSmall,
+		Wrap:    true,
+		Content: kit.chips(id, r, tap),
+	})
+}
+
+func (kit *Toolkit) chips(id string, r menu.Row, tap func(int)) []gogui.View {
 	var chips []gogui.View
 	for i, option := range r.Options {
 		st := gogui.CurrentTheme().Cfg.TextStyleDef
@@ -221,11 +254,71 @@ func (kit *Toolkit) segments(id string, r menu.Row, tap func(int)) gogui.View {
 			e.Window.InvalidateLayout()
 		}))
 	}
-	return gogui.Row(gogui.ContainerCfg{
-		Padding: gogui.NoPadding,
-		Spacing: gogui.SpacingSmall,
-		Content: chips,
-	})
+	return chips
+}
+
+func (kit *Toolkit) fitSegments(key, label string, stacked bool) func(gogui.EventCtx) {
+	return func(e gogui.EventCtx) {
+		kids := e.Layout.Children
+		if len(kids) == 0 {
+			return
+		}
+		t := gogui.CurrentTheme().Cfg
+		var head, chips *gogui.Layout
+		if stacked {
+			head = &kids[len(kids)-1]
+			if n := len(head.Children); n > 0 {
+				chips = &head.Children[n-1]
+			}
+		} else if len(kids) >= 2 {
+			head, chips = &kids[len(kids)-2], &kids[len(kids)-1]
+		}
+		if head == nil || chips == nil {
+			return
+		}
+		room := head.Shape.Width
+		if !stacked {
+			room += t.SpacingMedium + chips.Shape.Width
+		}
+		want := e.Window.TextWidth(
+			label,
+			t.TextStyleDef,
+		) + t.SpacingMedium + oneLine(
+			chips,
+			t.SpacingSmall,
+		)
+		stack := want > room+0.5
+		if stack == stacked {
+			return
+		}
+		if kit.stacked == nil {
+			kit.stacked = map[string]bool{}
+		}
+		kit.stacked[key] = stack
+		e.Window.InvalidateLayout()
+	}
+}
+
+func oneLine(chips *gogui.Layout, gap float32) float32 {
+	var width float32
+	n := 0
+	var walk func(l *gogui.Layout)
+	walk = func(l *gogui.Layout) {
+		for i := range l.Children {
+			c := &l.Children[i]
+			if strings.Contains(c.Shape.ID, "-segment-") {
+				width += c.Shape.Width
+				n++
+				continue
+			}
+			walk(c)
+		}
+	}
+	walk(chips)
+	if n > 1 {
+		width += float32(n-1) * gap
+	}
+	return width
 }
 
 func markView(id string, m menu.Mark, side float32) gogui.View {

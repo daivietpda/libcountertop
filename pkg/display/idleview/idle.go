@@ -136,6 +136,19 @@ func (i *Idle) dusk(c schema.Idle) {
 		return
 	}
 
+	if c.Night == schema.NightDim {
+		quiet := i.quiet()
+		switch {
+		case on && (!dark || quiet <= after):
+			i.setNight(schema.NightNone)
+		case on:
+			i.setNight(schema.NightDim)
+		case dark && due(after, quiet) && i.options.Free():
+			i.setNight(schema.NightDim)
+		}
+		return
+	}
+
 	switch {
 	case on && !showing:
 		i.setNight(schema.NightNone)

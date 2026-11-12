@@ -10,6 +10,8 @@ import (
 type Toolkit struct {
 	Kit       func() style.Kit
 	Pressable func(func(gogui.ContainerCfg) gogui.View, gogui.ContainerCfg, func(gogui.EventCtx)) gogui.View
+
+	stacked map[string]bool
 }
 
 func (kit *Toolkit) controls() style.Kit { return kit.Kit() }
