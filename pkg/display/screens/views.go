@@ -153,23 +153,30 @@ func (a *App) volumeCard(w *gogui.Window) gogui.View {
 	})
 }
 
-func (a *App) keyboard(w *gogui.Window) gogui.View {
+func (a *App) keyboard(w *gogui.Window, covering *Screen) gogui.View {
+	opts := widgets.KeyboardOptions{
+		Size:    widgets.KeyboardSize(a.o.Settings().Screen.Keyboard),
+		Palette: a.ui.Palette(),
+		Kit:     a.ui.Kit(),
+	}
+	if !a.ui.Editor.Typing(w) && a.pageTyping(covering) {
+		page := a.o.Lovelace.Home
+		opts.Cancel, opts.OnCancel = say.T("keyboard.hide"), page.Hide
+		opts.Save, opts.OnSave = say.T("keyboard.enter"), func() { page.Press(gogui.KeyEnter) }
+		opts.Type, opts.Press = page.Type, page.Press
+		at, view := a.ui.Editor.Keyboard(w, opts)
+		return widgets.Placed(at, view)
+	}
 	a.mu.Lock()
 	r := a.r
 	a.mu.Unlock()
 	if r == nil {
 		return nil
 	}
-	at, view := a.ui.Editor.Keyboard(w, widgets.KeyboardOptions{
-		Size:    widgets.KeyboardSize(a.o.Settings().Screen.Keyboard),
-		Palette: a.ui.Palette(),
-		Kit:     a.ui.Kit(),
-		Cancel:  say.T("keyboard.cancel"),
-		Save:    a.ui.Editor.Action(say.T("keyboard.save")),
-		Type:    r.Type,
-		Press:   r.Press,
-		Pair:    a.o.KeyboardPair,
-	})
+	opts.Cancel = say.T("keyboard.cancel")
+	opts.Save = a.ui.Editor.Action(say.T("keyboard.save"))
+	opts.Type, opts.Press, opts.Pair = r.Type, r.Press, a.o.KeyboardPair
+	at, view := a.ui.Editor.Keyboard(w, opts)
 	return widgets.Placed(at, view)
 }
 

@@ -32,6 +32,7 @@ var bridge string
 
 const (
 	binding    = "countertopAuth"
+	focus      = "countertopKeyboard"
 	setToken   = "externalAuthSetToken"
 	revoked    = "externalAuthRevokeToken"
 	tokenLimit = 20 * time.Second
@@ -68,6 +69,7 @@ type View struct {
 	shown    string
 	w, h     int
 	down     bool
+	field    bool
 	pictured bool
 	scheme   string
 	failed   bool
@@ -312,6 +314,8 @@ func (v *View) session(ctx context.Context) error {
 		{"Runtime.enable", nil},
 		{"Page.enable", nil},
 		{"Runtime.addBinding", map[string]any{"name": binding}},
+		{"Runtime.addBinding", map[string]any{"name": focus}},
+		{"Emulation.setFocusEmulationEnabled", map[string]any{"enabled": true}},
 		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": bridge}},
 		{"Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": v.themeScript()}},
 	} {
@@ -328,7 +332,7 @@ func (v *View) session(ctx context.Context) error {
 		v.mu.Lock()
 		if v.page == page {
 			v.page, v.shown, v.pictured, v.failed, v.healing, v.wait = nil, "", false, false, false, 0
-			v.scheme = ""
+			v.scheme, v.field = "", false
 			v.stopRetry()
 		}
 		v.mu.Unlock()
@@ -361,7 +365,15 @@ func (v *View) event(ctx context.Context, page *engine.Page, e engine.Event) {
 		Name    string `json:"name"`
 		Payload string `json:"payload"`
 	}
-	if json.Unmarshal(e.Params, &call) != nil || call.Name != binding {
+	if json.Unmarshal(e.Params, &call) != nil {
+		return
+	}
+	switch call.Name {
+	case focus:
+		v.typing(call.Payload == "1")
+		return
+	case binding:
+	default:
 		return
 	}
 	var ask struct {
@@ -420,6 +432,7 @@ func (v *View) navigated(page *engine.Page, raw json.RawMessage) {
 	if json.Unmarshal(raw, &nav) != nil || nav.Frame.ParentID != "" {
 		return
 	}
+	v.typing(false)
 	v.mu.Lock()
 	v.stopRetry()
 	if nav.Frame.Unreachable == "" {

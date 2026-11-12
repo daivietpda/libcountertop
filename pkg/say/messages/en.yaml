@@ -656,6 +656,8 @@ keyboard.cancel: Cancel
 keyboard.code_expired: Code expired
 message.close: Close
 keyboard.compact: Compact
+keyboard.enter: Enter
+keyboard.hide: Hide
 keyboard.large: Large
 keyboard.refresh: Refresh
 keyboard.save: Save

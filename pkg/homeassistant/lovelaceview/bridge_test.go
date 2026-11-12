@@ -22,18 +22,31 @@ function dashboardOpens() {
 	var main = { shadowRoot: { querySelector: (s) => (s === "partial-panel-resolver > *" ? panel : null) } };
 	ha = { shadowRoot: { querySelector: (s) => (s === "home-assistant-main" ? main : null) } };
 }
+var heard = {}, keys = [], clock = 0;
 var document = {
 	documentElement: root,
+	activeElement: null,
 	querySelector: (s) => (s === "home-assistant" ? ha : null),
 	createElement: (tag) => ({ tag }),
+	addEventListener(kind, f) { heard[kind] = f; },
 };
+var performance = { now: () => clock };
 var localStorage = { setItem(k, v) { stored[k] = v; } };
 function setInterval(f) { timers.push(f); }
 function setTimeout(f) { f(); }
 function tick() { timers.forEach((f) => f()); }
+function field(tag, type) {
+	return { tag, tagName: tag, getAttribute: (a) => (a === "type" ? type : null), blur() { document.activeElement = null; heard.focusout(); } };
+}
+function inside(el) { return { tagName: "HA-TEXTFIELD", shadowRoot: { activeElement: el } }; }
+function touch(at) { clock = at; heard.pointerdown(); }
+function focus(el, at) { clock = at; document.activeElement = el; heard.focusin(); }
+function blur() { document.activeElement = null; heard.focusout(); }
 var window = {
 	countertopAuth(s) { calls.push(JSON.parse(s)); },
+	countertopKeyboard(s) { keys.push(s); },
 	externalBus(m) { bus.push(m); },
+	addEventListener() {},
 };
 `
 
@@ -129,5 +142,57 @@ func TestBridgeHidesTheHeaderOnceTheDashboardOpens(t *testing.T) {
 	}
 	if got := run(t, vm, `root.style.props["--header-height"]`); got != `"0px"` {
 		t.Errorf("--header-height %s", got)
+	}
+}
+
+func TestBridgeAsksForTheKeyboardWhenATouchFocusesAField(t *testing.T) {
+	vm := loadBridge(t)
+	do(t, vm, `touch(100); focus(inside(field("INPUT", "text")), 300);`)
+	do(t, vm, `blur(); touch(5000); focus(field("TEXTAREA", null), 5200); blur();`)
+	if got := run(t, vm, "keys"); got != `["1","0","1","0"]` {
+		t.Errorf("keyboard asks %s", got)
+	}
+}
+
+func TestBridgeLeavesTheKeyboardDownForFieldsFocusedWithoutATouch(t *testing.T) {
+	vm := loadBridge(t)
+	do(t, vm, `touch(100); focus(field("INPUT", "search"), 3000);`)
+	if got := run(t, vm, "keys"); got != `[]` {
+		t.Errorf("keyboard asks %s", got)
+	}
+}
+
+func TestBridgeKeepsTheKeyboardMovingBetweenFields(t *testing.T) {
+	vm := loadBridge(t)
+	do(t, vm, `touch(100); focus(field("INPUT", "text"), 200);`)
+	do(
+		t,
+		vm,
+		`document.activeElement = field("INPUT", "number"); heard.focusout(); clock = 9000; heard.focusin();`,
+	)
+	if got := run(t, vm, "keys"); got != `["1"]` {
+		t.Errorf("keyboard asks %s", got)
+	}
+}
+
+func TestBridgeIgnoresFieldsThatTakeNoText(t *testing.T) {
+	vm := loadBridge(t)
+	do(t, vm, `touch(100); focus(field("INPUT", "checkbox"), 200);`)
+	do(t, vm, `var off = field("INPUT", "text"); off.readOnly = true; focus(off, 250);`)
+	if got := run(t, vm, "keys"); got != `[]` {
+		t.Errorf("keyboard asks %s", got)
+	}
+}
+
+func TestBridgeHidesByBlurringTheField(t *testing.T) {
+	vm := loadBridge(t)
+	do(t, vm, `touch(100); focus(inside(field("INPUT", "text")), 200);`)
+	do(
+		t,
+		vm,
+		`var host = document.activeElement; host.shadowRoot.activeElement.blur = function () { host.shadowRoot.activeElement = null; document.activeElement = null; heard.focusout(); }; window.countertopHide();`,
+	)
+	if got := run(t, vm, "keys"); got != `["1","0"]` {
+		t.Errorf("keyboard asks %s", got)
 	}
 }

@@ -657,6 +657,8 @@ keyboard.cancel: Annulla
 keyboard.code_expired: Codice scaduto
 message.close: Chiudi
 keyboard.compact: Compatta
+keyboard.enter: Invio
+keyboard.hide: Nascondi
 keyboard.large: Grande
 keyboard.refresh: Aggiorna
 keyboard.save: Salva

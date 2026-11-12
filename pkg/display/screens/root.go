@@ -51,8 +51,8 @@ func (a *App) compose(w *gogui.Window) gogui.View {
 	if v := a.busy(w, covering); v != nil {
 		layers = append(layers, widgets.Floating(busyZ, v))
 	}
-	if a.ui.Editor.Typing(w) {
-		if v := a.keyboard(w); v != nil {
+	if a.ui.Editor.Typing(w) || a.pageTyping(covering) {
+		if v := a.keyboard(w, covering); v != nil {
 			layers = append(
 				layers,
 				gogui.Column(
@@ -133,13 +133,21 @@ func stack(layers []gogui.View) gogui.View {
 	)
 }
 
+func (a *App) lovelace() bool {
+	return a.o.Lovelace != nil && a.o.Home != nil && a.o.Home.Speaks() == schema.HomeLovelace
+}
+
+func (a *App) pageTyping(covering *Screen) bool {
+	return covering == nil && a.o.Offering() == "" && a.lovelace() &&
+		a.o.Lovelace.Home.Typing()
+}
+
 func (a *App) dashboard(w *gogui.Window) gogui.View {
 	vw, vh := w.WindowSize()
 	pal := a.ui.Palette()
 	margin := int(reach() * 0.5)
 
-	lovelace := a.o.Lovelace != nil && a.o.Home != nil &&
-		a.o.Home.Speaks() == schema.HomeLovelace
+	lovelace := a.lovelace()
 	if a.o.Lovelace != nil {
 		a.o.Lovelace.Home.Set(lovelace)
 		a.o.Lovelace.Wake()
@@ -148,6 +156,9 @@ func (a *App) dashboard(w *gogui.Window) gogui.View {
 	switch {
 	case lovelace:
 		whole := ui.Rect{W: vw, H: vh}
+		if top := int(a.ui.Editor.Top); a.o.Lovelace.Home.Typing() && top > 0 && top < vh {
+			whole.H = top
+		}
 		layers = []gogui.View{widgets.Placed(whole, a.o.Lovelace.Home.Draw(whole))}
 	case a.rings != nil && a.o.Home.Speaks() == schema.HomeRings:
 		whole := ui.Rect{W: vw, H: vh}

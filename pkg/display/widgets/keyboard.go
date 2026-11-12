@@ -30,13 +30,14 @@ type KeyboardStyle interface {
 }
 
 type KeyboardOptions struct {
-	Size         KeyboardSize
-	Palette      theme.Theme
-	Kit          KeyboardStyle
-	Cancel, Save string
-	Type         func(rune)
-	Press        func(gogui.KeyCode)
-	Pair         func(string) (string, time.Time, error)
+	Size             KeyboardSize
+	Palette          theme.Theme
+	Kit              KeyboardStyle
+	Cancel, Save     string
+	OnCancel, OnSave func()
+	Type             func(rune)
+	Press            func(gogui.KeyCode)
+	Pair             func(string) (string, time.Time, error)
 }
 
 var (
@@ -203,14 +204,14 @@ func (editor *Editor) Keyboard(w *gogui.Window, opts KeyboardOptions) (ui.Rect, 
 			func() { editor.Symbols, editor.Shift = !editor.Symbols, false },
 		),
 		key("space", " ", space, plain, func() { opts.Type(' ') }),
-		key("cancel", opts.Cancel, unit*2+gap, special, func() {
+		key("cancel", opts.Cancel, unit*2+gap, special, or(opts.OnCancel, func() {
 			editor.Cancel()
 			w.ClearFocus()
-		}),
-		key("save", opts.Save, unit*2+gap, special, func() {
+		})),
+		key("save", opts.Save, unit*2+gap, special, or(opts.OnSave, func() {
 			editor.Save()
 			w.ClearFocus()
-		}),
+		})),
 	}
 	if phone != nil {
 		bottom = slices.Insert(bottom, 2, phone)
@@ -241,6 +242,13 @@ func (editor *Editor) Keyboard(w *gogui.Window, opts KeyboardOptions) (ui.Rect, 
 	opts.Kit.Panel(&tray)
 	tray.Color = gogui.RGB(tray.Color.R, tray.Color.G, tray.Color.B)
 	return at, gogui.Column(tray)
+}
+
+func or(do, fallback func()) func() {
+	if do != nil {
+		return do
+	}
+	return fallback
 }
 
 func keySize(k KeyboardSize) (row, text float32) {
