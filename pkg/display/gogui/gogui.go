@@ -210,6 +210,9 @@ func New(sink Sink, w *gui.Window) (*Renderer, error) {
 		still:  map[uint64][2]float32{},
 	}
 	r.back = &glyphBack{r: r, textures: map[glyph.TextureID]*page{}}
+	if err := os.Setenv("XDG_DATA_DIRS", "/system"); err != nil {
+		slog.Warn("gogui: system fonts", "err", err)
+	}
 	ts, err := glyph.NewTextSystem(r.back)
 	if err != nil {
 		return nil, fmt.Errorf("gogui: text system: %w", err)
