@@ -46,7 +46,7 @@ require (
 	github.com/tfriedel6/canvas v0.12.1
 	github.com/tphakala/go-aac v0.7.0
 	github.com/ulikunitz/xz v0.5.17
-	github.com/ygelfand/go-esphome-device v0.0.19
+	github.com/ygelfand/go-esphome-device v0.0.20
 	github.com/ygelfand/reolinkproxy v0.0.0-20261026000641-3a2fddcfed4f
 	github.com/zserge/microwakeword v0.0.0-20260330234603-bfaf3840114e
 	golang.org/x/crypto v0.58.0
