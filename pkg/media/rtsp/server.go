@@ -272,16 +272,22 @@ func (c *conn) handle(req *request) (int, []string, string) {
 		}
 		c.ses.stream.demand()
 		c.ses.play()
-		seq, ts := c.ses.rtpInfo()
+		var info []string
+		for at := range trackCount {
+			if seq, ts, open := c.ses.rtpInfo(at); open {
+				info = append(info, fmt.Sprintf(
+					"url=%s/trackID=%d;seq=%d;rtptime=%d",
+					strings.TrimSuffix(req.url, "/"),
+					at,
+					seq,
+					ts,
+				))
+			}
+		}
 		return 200, []string{
 			"Session: " + c.ses.id,
 			"Range: npt=0.000-",
-			fmt.Sprintf(
-				"RTP-Info: url=%s/trackID=0;seq=%d;rtptime=%d",
-				strings.TrimSuffix(req.url, "/"),
-				seq,
-				ts,
-			),
+			"RTP-Info: " + strings.Join(info, ","),
 		}, ""
 	case "TEARDOWN":
 		if c.ses != nil {
@@ -309,25 +315,38 @@ func (c *conn) setup(req *request) (int, []string, string) {
 	if st == nil {
 		return 404, nil, ""
 	}
-	st.demand()
-	if c.ses != nil {
-		c.ses.close()
+	at := trackOf(req.url)
+	if at < 0 || at == audioTrack && st.Audio == nil {
+		return 404, nil, ""
 	}
-	s := newSession(strconv.FormatUint(uint64(rand.Uint32()), 16))
-	s.cnamePrefix = c.srv.identity.CNAMEPrefix
-	s.stream = st
+	st.demand()
+	s := c.ses
+	if s == nil || s.stream != st || !sameSession(req, s) {
+		if s != nil {
+			s.close()
+		}
+		s = newSession(strconv.FormatUint(uint64(rand.Uint32()), 16))
+		s.cnamePrefix = c.srv.identity.CNAMEPrefix
+		s.stream = st
+	}
 	tr := req.header["transport"]
 	sid := "Session: " + s.id + fmt.Sprintf(";timeout=%d", int(idle.Seconds()))
 
 	if strings.Contains(tr, "RTP/AVP/TCP") {
-		lo := 0
+		lo := 2 * at
 		if v := param(tr, "interleaved"); v != "" {
 			a, _, _ := strings.Cut(v, "-")
 			if n, err := strconv.Atoi(a); err == nil {
 				lo = n
 			}
 		}
-		s.tcp, s.channel = c, byte(lo)
+		s.mu.Lock()
+		t := &s.tracks[at]
+		t.release()
+		t.open, t.channel = true, byte(lo)
+		ssrc := t.pz.ssrc
+		s.mu.Unlock()
+		s.tcp = c
 		c.ses = s
 		return 200, []string{
 			sid,
@@ -335,7 +354,7 @@ func (c *conn) setup(req *request) (int, []string, string) {
 				"Transport: RTP/AVP/TCP;unicast;interleaved=%d-%d;ssrc=%08X",
 				lo,
 				lo+1,
-				s.pz.ssrc,
+				ssrc,
 			),
 		}, ""
 	}
@@ -355,14 +374,36 @@ func (c *conn) setup(req *request) (int, []string, string) {
 	if err != nil {
 		return 503, nil, ""
 	}
-	s.udp, s.rtcp, s.peer = rtp, rtcp, peer
+	s.mu.Lock()
+	t := &s.tracks[at]
+	t.release()
+	t.open, t.udp, t.rtcp, t.peer = true, rtp, rtcp, peer
+	ssrc := t.pz.ssrc
+	s.mu.Unlock()
 	c.ses = s
 	lp := rtp.LocalAddr().(*net.UDPAddr).Port
 	return 200, []string{
 		sid,
 		fmt.Sprintf("Transport: RTP/AVP;unicast;client_port=%d-%d;server_port=%d-%d;ssrc=%08X",
-			port, port+1, lp, lp+1, s.pz.ssrc),
+			port, port+1, lp, lp+1, ssrc),
 	}, ""
+}
+
+func trackOf(raw string) int {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return -1
+	}
+	p := strings.Trim(u.Path, "/")
+	i := strings.LastIndex(p, "trackID=")
+	if i < 0 {
+		return videoTrack
+	}
+	n, err := strconv.Atoi(p[i+len("trackID="):])
+	if err != nil || n < 0 || n >= trackCount {
+		return -1
+	}
+	return n
 }
 
 func param(transport, name string) string {

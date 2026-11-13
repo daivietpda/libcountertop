@@ -15,43 +15,69 @@ const (
 	reportEvery = 5 * time.Second
 )
 
+const (
+	videoTrack = iota
+	audioTrack
+	trackCount
+)
+
 type packet struct {
 	b       []byte
+	track   int
 	control bool
+}
+
+type track struct {
+	pz       packetizer
+	base     uint32
+	open     bool
+	channel  byte
+	udp      *net.UDPConn
+	rtcp     *net.UDPConn
+	peer     *net.UDPAddr
+	reported time.Time
+}
+
+func (t *track) release() {
+	if t.udp != nil {
+		_ = t.udp.Close()
+	}
+	if t.rtcp != nil {
+		_ = t.rtcp.Close()
+	}
+	*t = track{pz: t.pz, base: t.base}
 }
 
 type session struct {
 	cnamePrefix string
 	id          string
 	stream      *Stream
-	pz          packetizer
-	base        uint32
+	tcp         *conn
 
-	tcp     *conn
-	channel byte
-
-	udp  *net.UDPConn
-	rtcp *net.UDPConn
-	peer *net.UDPAddr
-
-	mu       sync.Mutex
-	started  bool
-	playing  bool
-	reported time.Time
-	out      chan packet
-	done     chan struct{}
-	stop     sync.Once
+	mu      sync.Mutex
+	tracks  [trackCount]track
+	started bool
+	playing bool
+	out     chan packet
+	done    chan struct{}
+	stop    sync.Once
 }
 
 func newSession(id string) *session {
-	return &session{
+	s := &session{
 		id:          id,
 		cnamePrefix: "countertop-",
-		pz:          packetizer{ssrc: rand.Uint32(), seq: uint16(rand.Uint32())},
-		base:        rand.Uint32(),
 		out:         make(chan packet, queued),
 		done:        make(chan struct{}),
 	}
+	kinds := [trackCount]byte{payloadType, audioPayloadType}
+	for i := range s.tracks {
+		s.tracks[i] = track{
+			pz:   packetizer{kind: kinds[i], ssrc: rand.Uint32(), seq: uint16(rand.Uint32())},
+			base: rand.Uint32(),
+		}
+	}
+	return s
 }
 
 func (s *session) play() {
@@ -72,18 +98,21 @@ func (s *session) close() {
 			s.stream.remove(s)
 		}
 		close(s.done)
-		if s.udp != nil {
-			_ = s.udp.Close()
+		s.mu.Lock()
+		for i := range s.tracks {
+			s.tracks[i].release()
 		}
-		if s.rtcp != nil {
-			_ = s.rtcp.Close()
-		}
+		s.mu.Unlock()
 	})
 }
 
 func (s *session) deliver(nalus [][]byte, key bool, sps, pps []byte, pts time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	t := &s.tracks[videoTrack]
+	if !t.open {
+		return
+	}
 	if !s.started {
 		if !key {
 			return
@@ -93,16 +122,37 @@ func (s *session) deliver(nalus [][]byte, key bool, sps, pps []byte, pts time.Du
 			nalus = append([][]byte{sps, pps}, nalus...)
 		}
 	}
-	ts := s.base + uint32(int64(pts)*9/100000)
-	for _, p := range s.pz.packets(nalus, ts) {
-		if !s.queue(packet{b: p}) {
+	ts := t.base + uint32(int64(pts)*9/100000)
+	for _, p := range t.pz.packets(nalus, ts) {
+		if !s.queue(packet{b: p, track: videoTrack}) {
 			return
 		}
 	}
-	if now := time.Now(); now.Sub(s.reported) >= reportEvery {
-		s.reported = now
-		s.queue(packet{b: s.pz.report(now, ts, s.cnamePrefix+s.id), control: true})
+	s.report(videoTrack, ts)
+}
+
+func (s *session) deliverAudio(au []byte, rate int, pts time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t := &s.tracks[audioTrack]
+	if !t.open {
+		return
 	}
+	ts := t.base + uint32(int64(pts)*int64(rate)/int64(time.Second))
+	if !s.queue(packet{b: t.pz.aac(au, ts), track: audioTrack}) {
+		return
+	}
+	s.report(audioTrack, ts)
+}
+
+func (s *session) report(at int, ts uint32) {
+	t := &s.tracks[at]
+	now := time.Now()
+	if now.Sub(t.reported) < reportEvery {
+		return
+	}
+	t.reported = now
+	s.queue(packet{b: t.pz.report(now, ts, s.cnamePrefix+s.id), track: at, control: true})
 }
 
 func (s *session) queue(p packet) bool {
@@ -121,19 +171,23 @@ func (s *session) send() {
 		case <-s.done:
 			return
 		case p := <-s.out:
+			s.mu.Lock()
+			t := s.tracks[p.track]
+			s.mu.Unlock()
 			var err error
 			switch {
 			case s.tcp != nil && p.control:
-				err = s.tcp.interleaved(s.channel+1, p.b)
+				err = s.tcp.interleaved(t.channel+1, p.b)
 			case s.tcp != nil:
-				err = s.tcp.interleaved(s.channel, p.b)
+				err = s.tcp.interleaved(t.channel, p.b)
+			case t.udp == nil:
 			case p.control:
-				_, _ = s.rtcp.WriteToUDP(
+				_, _ = t.rtcp.WriteToUDP(
 					p.b,
-					&net.UDPAddr{IP: s.peer.IP, Port: s.peer.Port + 1, Zone: s.peer.Zone},
+					&net.UDPAddr{IP: t.peer.IP, Port: t.peer.Port + 1, Zone: t.peer.Zone},
 				)
 			default:
-				_, err = s.udp.WriteToUDP(p.b, s.peer)
+				_, err = t.udp.WriteToUDP(p.b, t.peer)
 			}
 			if err != nil {
 				s.close()
@@ -143,10 +197,11 @@ func (s *session) send() {
 	}
 }
 
-func (s *session) rtpInfo() (uint16, uint32) {
+func (s *session) rtpInfo(at int) (uint16, uint32, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.pz.seq, s.base
+	t := &s.tracks[at]
+	return t.pz.seq, t.base, t.open
 }
 
 func frame(channel byte, p []byte) []byte {

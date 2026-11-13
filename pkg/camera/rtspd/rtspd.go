@@ -39,6 +39,8 @@ type Options struct {
 	Bitrate  func(width, height int) int
 	ONVIF    func() onvif.Config
 	Auth     digest.Credentials
+	Mic      Mic
+	MicMuted func() bool
 }
 
 type Server struct {
@@ -47,6 +49,7 @@ type Server struct {
 	mu    sync.Mutex
 	srv   *rtsp.Server
 	pumps [len(paths)]*pump
+	sound *sound
 	desc  *onvif.Endpoint
 }
 
@@ -85,6 +88,14 @@ func (s *Server) Start() {
 	srv := rtsp.NewServerWithIdentity(s.options.Identity)
 	srv.Auth = s.options.Auth
 	served := s.options.Served()
+	s.sound = nil
+	if s.options.Mic != nil {
+		a, err := newSound(s.options.Mic, s.options.MicMuted)
+		if err != nil {
+			slog.Warn("rtsp serves video only", "err", err)
+		}
+		s.sound = a
+	}
 	for _, i := range served {
 		st := rtsp.NewStream()
 		p := &pump{
@@ -95,6 +106,13 @@ func (s *Server) Start() {
 			helper: s.options.Helper,
 		}
 		st.OnDemand = p.demand
+		if a := s.sound; a != nil {
+			a.carry(st)
+			st.OnDemand = func() {
+				p.demand()
+				a.demand()
+			}
+		}
 		s.pumps[i] = p
 		srv.Handle(paths[i], st)
 	}
@@ -125,6 +143,10 @@ func (s *Server) Stop() {
 			p.halt()
 		}
 		s.pumps[i] = nil
+	}
+	if s.sound != nil {
+		s.sound.halt()
+		s.sound = nil
 	}
 }
 

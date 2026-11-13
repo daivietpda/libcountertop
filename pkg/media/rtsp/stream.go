@@ -8,8 +8,15 @@ import (
 	"time"
 )
 
+type AAC struct {
+	Rate     int
+	Channels int
+	Config   []byte
+}
+
 type Stream struct {
 	OnDemand func()
+	Audio    *AAC
 
 	mu       sync.Mutex
 	sps, pps []byte
@@ -62,6 +69,25 @@ func (st *Stream) Write(au []byte, pts time.Duration) {
 	}
 }
 
+func (st *Stream) WriteAudio(au []byte, pts time.Duration) {
+	if st.Audio == nil || len(au) == 0 {
+		return
+	}
+	for _, s := range st.sessions() {
+		s.deliverAudio(au, st.Audio.Rate, pts)
+	}
+}
+
+func (st *Stream) sessions() []*session {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	subs := make([]*session, 0, len(st.subs))
+	for s := range st.subs {
+		subs = append(subs, s)
+	}
+	return subs
+}
+
 func (st *Stream) demand() {
 	if st.OnDemand != nil {
 		st.OnDemand()
@@ -99,7 +125,7 @@ func (st *Stream) sdpNamed(id uint32, host string, wait time.Duration, name stri
 		return "", false
 	}
 	enc := base64.StdEncoding.EncodeToString
-	return fmt.Sprintf(
+	sdp := fmt.Sprintf(
 		"v=0\r\n"+
 			"o=- %d 1 IN IP4 %s\r\n"+
 			"s=%s\r\n"+
@@ -120,5 +146,21 @@ func (st *Stream) sdpNamed(id uint32, host string, wait time.Duration, name stri
 		sps[3],
 		enc(sps),
 		enc(pps),
-	), true
+	)
+	if a := st.Audio; a != nil {
+		sdp += fmt.Sprintf(
+			"m=audio 0 RTP/AVP %d\r\n"+
+				"a=rtpmap:%d MPEG4-GENERIC/%d/%d\r\n"+
+				"a=fmtp:%d streamtype=5;profile-level-id=1;mode=AAC-hbr;"+
+				"sizelength=13;indexlength=3;indexdeltalength=3;config=%X\r\n"+
+				"a=control:trackID=1\r\n",
+			audioPayloadType,
+			audioPayloadType,
+			a.Rate,
+			a.Channels,
+			audioPayloadType,
+			a.Config,
+		)
+	}
+	return sdp, true
 }

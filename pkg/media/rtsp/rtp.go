@@ -6,12 +6,14 @@ import (
 )
 
 const (
-	payloadType = 96
-	maxPayload  = 1400
-	headerLen   = 12
+	payloadType      = 96
+	audioPayloadType = 97
+	maxPayload       = 1400
+	headerLen        = 12
 )
 
 type packetizer struct {
+	kind   byte
 	ssrc   uint32
 	seq    uint16
 	sent   uint32
@@ -48,10 +50,17 @@ func (p *packetizer) packets(nalus [][]byte, ts uint32) [][]byte {
 	return out
 }
 
+// RFC 3640 AAC-hbr: a 16-bit AU-headers-length, then one 13-bit size and 3-bit index per AU.
+func (p *packetizer) aac(au []byte, ts uint32) []byte {
+	n := len(au)
+	head := []byte{0x00, 0x10, byte(n >> 5), byte(n&0x1f) << 3}
+	return p.packet(head, au, ts, true)
+}
+
 func (p *packetizer) packet(head, body []byte, ts uint32, marker bool) []byte {
 	b := make([]byte, headerLen, headerLen+len(head)+len(body))
 	b[0] = 0x80
-	b[1] = payloadType
+	b[1] = p.kind
 	if marker {
 		b[1] |= 0x80
 	}

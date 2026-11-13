@@ -29,7 +29,8 @@ func accessUnits(b []byte) [][]byte {
 	return aus
 }
 
-func TestFFmpegPlaysIt(t *testing.T) {
+func testH264(t *testing.T) [][]byte {
+	t.Helper()
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		t.Skip("no ffmpeg")
 	}
@@ -67,6 +68,11 @@ func TestFFmpegPlaysIt(t *testing.T) {
 	if len(aus) < 30 {
 		t.Fatalf("%d access units", len(aus))
 	}
+	return aus
+}
+
+func TestFFmpegPlaysIt(t *testing.T) {
+	aus := testH264(t)
 
 	srv := NewServer()
 	var password atomic.Value
