@@ -20,13 +20,19 @@ type NetworkState struct {
 func NetworkPage(
 	read func() NetworkState,
 	setVerify, setViaHome func(bool),
+	wifi *WifiPages,
 	web *WebAccess,
 	stack *shell.Shell,
 ) *shell.Page {
 	return &shell.Page{Title: say.T("network.title"), Build: func() ([]menu.Row, []func(int)) {
 		c := read()
+		ssid := menu.Row{Label: say.T("network.ssid"), Kind: menu.Plain, Value: c.SSID}
+		if wifi != nil {
+			ssid.Kind = menu.Chevron
+			ssid.Open = func() shell.View { return wifi.Picker() }
+		}
 		rows := []menu.Row{
-			{Label: say.T("network.ssid"), Kind: menu.Plain, Value: c.SSID},
+			ssid,
 			{Label: say.T("network.address"), Kind: menu.Plain, Value: c.Address},
 			{Label: say.T("network.mac"), Kind: menu.Plain, Value: c.MAC},
 		}

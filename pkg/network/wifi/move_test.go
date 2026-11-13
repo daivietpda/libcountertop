@@ -52,7 +52,7 @@ func TestOneMoveAtATimeWithItsDeadline(t *testing.T) {
 	}
 
 	n.release <- errors.New("no address")
-	if s := settled(t, m); s.Failed == "" {
+	if s := settled(t, m); s.Failed == nil {
 		t.Errorf("after a failed move: %+v, want the reason", s)
 	}
 
@@ -61,7 +61,7 @@ func TestOneMoveAtATimeWithItsDeadline(t *testing.T) {
 	}
 	<-n.asked
 	n.release <- nil
-	if s := settled(t, m); s.Failed != "" || s.SSID != "new" {
+	if s := settled(t, m); s.Failed != nil || s.SSID != "new" {
 		t.Errorf("after a good move: %+v, want new with no failure", s)
 	}
 }

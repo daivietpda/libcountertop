@@ -25,7 +25,7 @@ type MoveState struct {
 	SSID   string
 	Until  time.Time
 	Moving bool
-	Failed string
+	Failed error
 }
 
 type Mover struct {
@@ -76,7 +76,7 @@ func (m *Mover) run(ssid, passphrase string) {
 	m.mu.Lock()
 	m.state.Moving = false
 	if err != nil {
-		m.state.Failed = err.Error()
+		m.state.Failed = err
 	}
 	m.mu.Unlock()
 

@@ -143,7 +143,7 @@ func (r *Radio) Run(ctx context.Context) error {
 			r.connected()
 		case e.Is(wpa.EventStateChange):
 			if s, ok := wpa.ParseState(e.Text); ok {
-				r.apply(s.Completed, s.SSID)
+				r.changed(s)
 			}
 		case e.Is(wpa.EventDisconnected):
 			r.apply(false, "")
@@ -166,19 +166,35 @@ func (r *Radio) settle() {
 		return
 	}
 
-	if known, err := wpa.Configured(wpa.Commands{Connection: ctl}); err == nil {
+	c, err := r.Dial()
+	if err != nil {
+		slog.Warn("could not read the supplicant's status", "err", err)
+		return
+	}
+	defer c.Close()
+
+	if known, err := wpa.Configured(wpa.Commands{Connection: c}); err == nil {
 		r.mu.Lock()
 		r.configured = len(known) > 0
 		r.configuredKnown = true
 		r.mu.Unlock()
 	}
 
-	s, err := ctl.Status()
+	s, err := c.Status()
 	if err != nil {
 		slog.Warn("could not read the supplicant's status", "err", err)
 		return
 	}
 	r.apply(s["wpa_state"] == "COMPLETED", s["ssid"])
+}
+
+// Some vendor supplicants send a completed STATE-CHANGE without SSID=.
+func (r *Radio) changed(s wpa.StateChange) {
+	if s.Completed && s.SSID == "" {
+		r.connected()
+		return
+	}
+	r.apply(s.Completed, s.SSID)
 }
 
 // Some vendor supplicants omit STATE-CHANGE, and their STATUS replies can emit CONNECTED again.
@@ -190,10 +206,16 @@ func (r *Radio) connected() {
 		return
 	}
 	r.apply(true, ssid)
-	if ctl != nil {
-		if status, err := ctl.Status(); err == nil && status["ssid"] != "" {
-			r.apply(true, status["ssid"])
-		}
+	if ctl == nil {
+		return
+	}
+	c, err := r.Dial()
+	if err != nil {
+		return
+	}
+	defer c.Close()
+	if status, err := c.Status(); err == nil && status["ssid"] != "" {
+		r.apply(true, status["ssid"])
 	}
 }
 

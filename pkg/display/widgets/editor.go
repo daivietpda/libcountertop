@@ -21,6 +21,7 @@ type Editor struct {
 	revealed  map[string]struct{}
 	Presses   *interaction.Presses
 	leaf      string
+	focusing  string
 	save      func()
 	actions   map[string]string
 	Top       float32
@@ -116,6 +117,14 @@ func (e *Editor) Field(kit FieldStyle, cfg gui.InputCfg, save func()) gui.View {
 	return gui.Column(gui.ContainerCfg{
 		Sizing: cfg.Sizing, Padding: gui.NoPadding,
 		AmendLayout: func(ev gui.EventCtx) {
+			if e.focusing == leaf {
+				e.focusing = ""
+				ev.Window.QueueCommand(func(w *gui.Window) {
+					for _, id := range w.ResolveID(leaf) {
+						w.SetFocus(id)
+					}
+				})
+			}
 			if focused(ev.Window, leaf) {
 				if e.leaf != leaf || e.remote.Target == "" {
 					e.remote = textentry.View{
@@ -148,6 +157,12 @@ func (e *Editor) Row(kit FieldStyle, id string, r menu.Row) gui.View {
 		text = r.Value
 	}
 	_, shown := e.revealed[fid]
+	if r.Action != "" {
+		e.actions[fid] = r.Action
+	}
+	if r.Focus {
+		e.focusing = fid
+	}
 	field := e.Field(kit, gui.InputCfg{
 		ID:         fid,
 		Text:       text,
@@ -157,7 +172,10 @@ func (e *Editor) Row(kit FieldStyle, id string, r menu.Row) gui.View {
 			e.drafts[fid] = s
 			ev.Window.InvalidateLayout()
 		},
-		OnTextCommit: func(_ string, _ gui.InputCommitReason, ev gui.EventCtx) {
+		OnTextCommit: func(_ string, why gui.InputCommitReason, ev gui.EventCtx) {
+			if r.Action != "" && why == gui.InputCommitBlur {
+				return
+			}
 			e.keep(fid, r.Save)
 			ev.Window.InvalidateLayout()
 		},

@@ -47,8 +47,10 @@ type Row struct {
 
 	Preview Preview
 
-	Save func(string)
-	Open func() View
+	Save   func(string)
+	Action string
+	Focus  bool
+	Open   func() View
 }
 
 type Preview interface {

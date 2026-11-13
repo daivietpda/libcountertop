@@ -1775,6 +1775,25 @@ weather.uv: "UV {{.N}}"
 weather.wind: "Vento {{.N}} {{.Unit}}"
 webaccess.address: Indirizzo
 webaccess.title: Accesso web
+wifi.busy: Già in connessione a un'altra rete
+wifi.connected: Connesso
+wifi.failed: "Impossibile connettersi a {{.Network}}"
+wifi.join: Connetti
+wifi.joined: "Connesso a {{.Network}}"
+wifi.joining: "Connessione a {{.Network}}…"
+wifi.left: "{{.N}} s rimanenti"
+wifi.none: Nessuna rete trovata
+wifi.ok: OK
+wifi.password: Password
+wifi.refused: Password errata
+wifi.scan: Cerca di nuovo
+wifi.scan.failed: Ricerca non riuscita
+wifi.scanning: Ricerca…
+wifi.short: "Usa almeno {{.N}} caratteri"
+wifi.timeout: "Nessuna connessione entro {{.Minutes}} minuti"
+wifi.title: Wi-Fi
+wifi.unreachable: Riprova
+wifi.unsupported: "{{.Security}}, non supportata"
 youtube.category.filler: Riempitivo
 youtube.category.hook: Gancio
 youtube.category.interaction: Promemoria interazione

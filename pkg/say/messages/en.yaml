@@ -1775,6 +1775,25 @@ weather.uv: "UV {{.N}}"
 weather.wind: "Wind {{.N}} {{.Unit}}"
 webaccess.address: Address
 webaccess.title: Web access
+wifi.busy: Already joining another network
+wifi.connected: Connected
+wifi.failed: "Couldn't join {{.Network}}"
+wifi.join: Join
+wifi.joined: "Connected to {{.Network}}"
+wifi.joining: "Joining {{.Network}}…"
+wifi.left: "{{.N}} s left"
+wifi.none: No networks found
+wifi.ok: OK
+wifi.password: Password
+wifi.refused: Wrong password
+wifi.scan: Scan again
+wifi.scan.failed: Scan failed
+wifi.scanning: Scanning…
+wifi.short: "Use at least {{.N}} characters"
+wifi.timeout: "No connection within {{.Minutes}} minutes"
+wifi.title: Wi-Fi
+wifi.unreachable: Try again
+wifi.unsupported: "{{.Security}}, not supported"
 youtube.category.filler: Filler
 youtube.category.hook: Hook
 youtube.category.interaction: Interaction reminder

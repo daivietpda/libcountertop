@@ -47,7 +47,10 @@ func (a *API) wifiState(w http.ResponseWriter, r *http.Request) {
 	}
 	out := wifiReply{Network: a.o.Wifi.Network(), Now: a.o.Now()}
 	if s := a.o.Wifi.State(); s.SSID != "" {
-		out.Move = &wifiMove{SSID: s.SSID, Until: s.Until, Moving: s.Moving, Failed: s.Failed}
+		out.Move = &wifiMove{SSID: s.SSID, Until: s.Until, Moving: s.Moving}
+		if s.Failed != nil {
+			out.Move.Failed = s.Failed.Error()
+		}
 	}
 	reply(w, out)
 }

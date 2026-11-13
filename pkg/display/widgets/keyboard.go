@@ -57,10 +57,14 @@ func (editor *Editor) Keyboard(w *gogui.Window, opts KeyboardOptions) (ui.Rect, 
 
 	plain := pal.Background.Blend(pal.Text, 0.18)
 	special := pal.Background.Blend(pal.Text, 0.10)
+	action := pal.Accent
 	key := func(id, label string, width float32, fill theme.Color, do func()) gogui.View {
 		state := style.Rest
-		if fill == special {
+		switch fill {
+		case special:
 			state = style.Partial
+		case action:
+			state = style.Chosen
 		}
 		st := gogui.CurrentTheme().Cfg.TextStyleDef
 		if label == gogui.IconArrowUp || label == gogui.IconArrowLeft {
@@ -73,6 +77,9 @@ func (editor *Editor) Keyboard(w *gogui.Window, opts KeyboardOptions) (ui.Rect, 
 		}
 		st.Size *= textScale
 		st.Color = Color(pal.Text)
+		if state == style.Chosen {
+			st.Color = Color(pal.Contrast(fill))
+		}
 		cfg := gogui.ContainerCfg{
 			ID:      "key-" + id,
 			Width:   width,
@@ -208,7 +215,7 @@ func (editor *Editor) Keyboard(w *gogui.Window, opts KeyboardOptions) (ui.Rect, 
 			editor.Cancel()
 			w.ClearFocus()
 		})),
-		key("save", opts.Save, unit*2+gap, special, or(opts.OnSave, func() {
+		key("save", opts.Save, unit*2+gap, action, or(opts.OnSave, func() {
 			editor.Save()
 			w.ClearFocus()
 		})),
