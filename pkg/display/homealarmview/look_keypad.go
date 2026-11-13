@@ -20,8 +20,62 @@ func keypadLook(f *face) (gogui.View, skin) {
 	u := f.unit()
 	m := u * 0.045
 	top := u * 0.1
-	tone := f.tone(sk)
+	views := []gogui.View{keypadBar(f, sk, m, top)}
+	if f.tall() {
+		views = append(views, keypadTall(f, sk, m, top)...)
+	} else {
+		views = append(views, keypadWide(f, sk, m, top)...)
+	}
+	return gogui.Stack(gogui.ContainerCfg{
+		Width:   f.vw,
+		Height:  f.vh,
+		Sizing:  gogui.FixedFixed,
+		Padding: gogui.NoPadding,
+		Content: views,
+	}), sk
+}
 
+func keypadWide(f *face, sk skin, m, top float32) []gogui.View {
+	u := f.unit()
+	rightW := f.vw * 0.36
+	rx := f.vw - m - rightW
+	leftW := rx - 2*m
+	body := f.vh - top - m
+	head, headH := keypadHead(f, sk, leftW)
+	foot := u * 0.12
+	views := []gogui.View{place(m, top, leftW, headH, head)}
+	gridH := body - headH - foot - u*0.03
+	if mid := keypadMiddle(f, sk, leftW, gridH); mid != nil {
+		views = append(views, place(m, top+headH, leftW, gridH, mid))
+	}
+	return append(views,
+		place(m, f.vh-m-foot, leftW, foot, keypadToggles(f, sk, leftW, foot)),
+		place(rx, top, rightW, body, keypadPanel(f, sk, rightW, body)),
+	)
+}
+
+func keypadTall(f *face, sk skin, m, top float32) []gogui.View {
+	u := f.unit()
+	gap := u * 0.02
+	w := f.vw - 2*m
+	head, headH := keypadHead(f, sk, w)
+	foot := u * 0.1
+	panelH := keypadPanelHeight(f, u*0.3, m)
+	panelY := f.vh - m - foot - gap - panelH
+	views := []gogui.View{place(m, top, w, headH, head)}
+	if gridH := panelY - gap - top - headH; gridH > 0 {
+		if mid := keypadMiddle(f, sk, w, gridH); mid != nil {
+			views = append(views, place(m, top+headH, w, gridH, mid))
+		}
+	}
+	return append(views,
+		place(m, panelY, w, panelH, keypadPanel(f, sk, w, panelH)),
+		place(m, f.vh-m-foot, w, foot, keypadToggles(f, sk, w, foot)),
+	)
+}
+
+func keypadBar(f *face, sk skin, m, top float32) gogui.View {
+	u := f.unit()
 	chip := func(label string, lit bool, c gogui.Color) gogui.View {
 		dot := sk.muted.WithOpacity(0.4)
 		if lit {
@@ -41,7 +95,7 @@ func keypadLook(f *face) (gogui.View, skin) {
 		})
 	}
 	s := f.state.Status
-	bar := place(m, 0, f.vw-2*m-f.cornerWidth(), top, gogui.Row(gogui.ContainerCfg{
+	return place(m, 0, f.vw-2*m-f.cornerWidth(), top, gogui.Row(gogui.ContainerCfg{
 		Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.04),
 		VAlign: gogui.VAlignMiddle,
 		Content: []gogui.View{
@@ -57,82 +111,94 @@ func keypadLook(f *face) (gogui.View, skin) {
 			sk.label(f.clock()+" "+f.meridiem(), u*0.045, sk.ink, true),
 		},
 	}))
+}
 
-	rightW := f.vw * 0.36
-	rx := f.vw - m - rightW
-	leftW := rx - 2*m
-	body := f.vh - top - m
-
+func keypadHead(f *face, sk skin, w float32) (gogui.View, float32) {
+	u := f.unit()
 	title := f.title()
-	tsize := f.fit(sk, title, leftW, u*0.13, true)
-	left := []gogui.View{
-		row(leftW, tsize*1.25, u*0.02, gogui.HAlignLeft,
-			icon(f.glyph(), tsize*0.9, tone),
+	most := u * 0.13
+	if f.tall() {
+		most = u * 0.09
+	}
+	tsize := f.fit(sk, title, w-most*0.9-u*0.02, most, true)
+	lines := []gogui.View{
+		row(w, tsize*1.25, u*0.02, gogui.HAlignLeft,
+			icon(f.glyph(), tsize*0.9, f.tone(sk)),
 			sk.label(title, tsize, sk.ink, true)),
 	}
 	if d := f.detail(); d != "" {
-		left = append(left, sk.label(d, u*0.04, sk.warn, true))
+		lines = append(lines, sk.label(d, u*0.04, sk.warn, true))
 	}
-	head := tsize*1.25 + u*0.07
-	foot := u * 0.12
-	views := []gogui.View{bar,
-		place(m, top, leftW, head, gogui.Column(gogui.ContainerCfg{
-			Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.01),
-			Content: left,
-		})),
-	}
-	gridH := body - head - foot - u*0.03
+	return gogui.Column(gogui.ContainerCfg{
+		Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.01),
+		Content: lines,
+	}), tsize*1.25 + u*0.07
+}
+
+func keypadMiddle(f *face, sk skin, w, h float32) gogui.View {
+	u := f.unit()
 	if zones := f.zones(); len(zones) > 0 {
-		views = append(
-			views,
-			place(m, top+head, leftW, gridH, keypadZones(f, sk, zones, leftW, gridH)),
-		)
-	} else if lines := f.entries(6); len(lines) > 0 {
-		log := []gogui.View{
-			widgets.Divider(),
-			sk.label(say.T("homealarm.recent"), u*0.03, sk.muted, true),
-		}
-		for _, l := range lines {
-			log = append(log, sk.label(l, u*0.034, sk.ink, false))
-		}
-		views = append(views, place(m, top+head, leftW, gridH, gogui.Column(gogui.ContainerCfg{
-			Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.02),
-			Content: log,
-		})))
+		return keypadZones(f, sk, zones, w, h)
 	}
-	bottom := []gogui.View{}
+	lines := f.entries(6)
+	if len(lines) == 0 {
+		return nil
+	}
+	log := []gogui.View{
+		widgets.Divider(),
+		sk.label(say.T("homealarm.recent"), u*0.03, sk.muted, true),
+	}
+	for _, l := range lines {
+		log = append(log, sk.label(l, u*0.034, sk.ink, false))
+	}
+	return gogui.Column(gogui.ContainerCfg{
+		Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.02),
+		Content: log,
+	})
+}
+
+func keypadToggles(f *face, sk skin, w, h float32) gogui.View {
+	u := f.unit()
+	var keys []gogui.View
 	for _, t := range f.toggles() {
-		w := min(leftW*0.25, u*0.3)
+		tw := min(w*0.25, u*0.3)
 		fill := sk.key
 		if t.current {
 			fill = sk.chosen
 		}
-		bottom = append(bottom, f.key(key{
+		keys = append(keys, f.key(key{
 			id:     t.id,
-			w:      w,
-			h:      foot,
+			w:      tw,
+			h:      h,
 			fill:   fill,
 			ink:    sk.ink,
 			radius: sk.radius,
 			align:  gogui.HAlignCenter,
 			content: []gogui.View{
-				sk.label(t.label, f.fit(sk, t.label, w*0.85, foot*0.3, true), sk.ink, true),
+				sk.label(t.label, f.fit(sk, t.label, tw*0.85, h*0.3, true), sk.ink, true),
 			},
 			run: t.run,
 		}))
 	}
 	if f.emergency() {
-		w := leftW * 0.55
-		bottom = append(bottom, f.emergencyKey(sk, w, foot, hex(0xe5484d), hex(0xffffff)))
+		keys = append(keys, f.emergencyKey(sk, w*0.55, h, hex(0xe5484d), hex(0xffffff)))
 	}
-	views = append(views, place(m, f.vh-m-foot, leftW, foot,
-		row(leftW, foot, u*0.02, gogui.HAlignLeft, bottom...)))
+	return row(w, h, u*0.02, gogui.HAlignLeft, keys...)
+}
 
-	inner := rightW - 2*m*0.6
+func keypadPanelHeight(f *face, padH, m float32) float32 {
+	u := f.unit()
+	return padH + 2*m*0.6 + u*0.11 + u*0.1 + 2*u*0.025
+}
+
+func keypadPanel(f *face, sk skin, w, h float32) gogui.View {
+	u := f.unit()
+	m := u * 0.045
+	inner := w - 2*m*0.6
 	display := u * 0.11
 	acts := f.actions()
 	actH := u * 0.1
-	padH := body - 2*m*0.6 - display - actH - 2*u*0.025
+	padH := h - 2*m*0.6 - display - actH - 2*u*0.025
 	actW := inner
 	if len(acts) > 0 {
 		actW = (inner - float32(len(acts)-1)*u*0.02) / float32(len(acts))
@@ -147,7 +213,7 @@ func keypadLook(f *face) (gogui.View, skin) {
 			run: a.run,
 		}))
 	}
-	views = append(views, place(rx, top, rightW, body, gogui.Column(gogui.ContainerCfg{
+	return gogui.Column(gogui.ContainerCfg{
 		Sizing: gogui.FillFill, Color: sk.panel, Radius: gogui.RadiusPx(sk.radius * 1.5),
 		Padding: gogui.PadAll(m * 0.6), Spacing: gogui.SpacingPx(u * 0.025),
 		HAlign: gogui.HAlignCenter,
@@ -161,14 +227,7 @@ func keypadLook(f *face) (gogui.View, skin) {
 			row(inner, actH, u*0.02, gogui.HAlignCenter, keys...),
 			f.padGrid(sk, inner, padH),
 		},
-	})))
-	return gogui.Stack(gogui.ContainerCfg{
-		Width:   f.vw,
-		Height:  f.vh,
-		Sizing:  gogui.FixedFixed,
-		Padding: gogui.NoPadding,
-		Content: views,
-	}), sk
+	})
 }
 
 func keypadZones(f *face, sk skin, zones []zoneLine, w, h float32) gogui.View {
@@ -203,11 +262,17 @@ func keypadZones(f *face, sk skin, zones []zoneLine, w, h float32) gogui.View {
 			f.zonePager(sk, pagerH, from, to, len(zones), pages),
 		)
 		zones = zones[from:to]
-		h -= pagerH + gap
+		h -= pagerH + 2*gap
 	}
 	rows := (len(zones) + cols - 1) / cols
 	tw := (w - float32(cols-1)*gap) / float32(cols)
 	th := min((h-float32(rows-1)*gap)/float32(rows), u*0.16)
+	nameW := tw * 0.85
+	nameH := th * 0.19
+	for _, z := range zones {
+		nameH = min(nameH, f.fit(sk, z.name, nameW, th*0.19, false))
+	}
+	nameH = max(nameH, th*0.13)
 	tiles := make([]gogui.View, 0, len(zones))
 	for _, z := range zones {
 		fill, ink, sub := sk.panel, sk.ink, sk.muted
@@ -232,7 +297,7 @@ func keypadZones(f *face, sk skin, zones []zoneLine, w, h float32) gogui.View {
 					},
 				}),
 				gogui.Row(gogui.ContainerCfg{Sizing: gogui.FillFill, Padding: gogui.NoPadding}),
-				sk.label(z.name, f.fit(sk, z.name, tw*0.85, th*0.19, false), ink, false),
+				sk.label(f.short(sk, z.name, nameW, nameH, false), nameH, ink, false),
 			},
 		}))
 	}

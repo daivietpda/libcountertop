@@ -37,8 +37,13 @@ func vaultLook(f *face) (gogui.View, skin) {
 	pw, ph := f.vw, f.vh
 	u := f.unit()
 	m := u * 0.04
+	tall := f.tall()
 	ring := min(ph-2*m, pw*0.56)
 	cx, cy := m+ring/2, ph/2
+	if tall {
+		ring = min(pw-2*m, ph*0.46)
+		cx, cy = pw/2, m*2+ring/2
+	}
 	outer, inner := ring*0.5, ring*0.34
 	door := inner * 0.92
 
@@ -138,7 +143,14 @@ func vaultLook(f *face) (gogui.View, skin) {
 	if f.still {
 		top = m
 	}
+	if tall {
+		rx, rw = m*1.5, pw-3*m
+		top = cy + outer + m*1.5
+	}
 	lcdH := min(ph*0.2, rw*0.36)
+	if tall {
+		lcdH = min(lcdH, u*0.2)
+	}
 	lines := []string{f.stateName(), f.title(), f.now.Format("Jan 2  15:04")}
 	switch {
 	case f.note != "":

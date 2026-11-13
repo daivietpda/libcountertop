@@ -19,7 +19,11 @@ func neonLook(f *face) (gogui.View, skin) {
 	u := f.unit()
 	m := u * 0.06
 	tone := f.tone(sk)
+	tall := f.tall()
 	leftW := f.vw*0.62 - m
+	if tall {
+		leftW = f.vw - 2*m
+	}
 
 	header := []gogui.View{
 		sk.label(f.stateName(), u*0.04, hex(0xff2e88), true),
@@ -56,7 +60,14 @@ func neonLook(f *face) (gogui.View, skin) {
 			Content: []gogui.View{sk.label(d, u*0.04, sk.back, true)},
 		}))
 	}
-	views := []gogui.View{place(m, m, leftW, f.vh*0.48-m, gogui.Column(gogui.ContainerCfg{
+	headH, gridY, logY, logH := f.vh*0.48-m, f.vh*0.56, f.vh*0.8, f.vh*0.2-m
+	cardsY := m + f.cornerWidth()*0.5
+	if tall {
+		headH, gridY = f.vh*0.3-m, f.vh*0.32
+		logY, logH = gridY+u*0.33, f.vh*0.14
+		cardsY = logY + logH + u*0.03
+	}
+	views := []gogui.View{place(m, m, leftW, headH, gogui.Column(gogui.ContainerCfg{
 		Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.03),
 		Content: left,
 	}))}
@@ -64,7 +75,6 @@ func neonLook(f *face) (gogui.View, skin) {
 	lines := f.entries(4)
 	if zones := f.zones(); len(zones) > 0 {
 		secure, open := f.counts()
-		gridY := f.vh * 0.56
 		barH := u * 0.14
 		gap := u * 0.012
 		bw := (leftW - float32(len(zones)-1)*gap) / float32(len(zones))
@@ -154,11 +164,12 @@ func neonLook(f *face) (gogui.View, skin) {
 		}
 		views = append(
 			views,
-			place(m, f.vh*0.8, leftW, f.vh*0.2-m, gogui.Column(gogui.ContainerCfg{
+			place(m, logY, leftW, logH, gogui.Column(gogui.ContainerCfg{
 				Sizing:  gogui.FillFill,
 				Padding: gogui.NoPadding,
 				Spacing: gogui.SpacingPx(u * 0.015),
 				VAlign:  gogui.VAlignBottom,
+				Clip:    true,
 				Content: rows,
 			})),
 		)
@@ -169,6 +180,10 @@ func neonLook(f *face) (gogui.View, skin) {
 	acts := f.actions()
 	emH := u * 0.13
 	avail := f.vh - 2*m - f.cornerWidth()*0.5
+	if tall {
+		cardW, cx = f.vw-2*m, m
+		avail = f.vh - m - cardsY
+	}
 	if f.emergency() {
 		avail -= emH + u*0.04
 	}
@@ -193,7 +208,7 @@ func neonLook(f *face) (gogui.View, skin) {
 	}
 	views = append(
 		views,
-		place(cx, m+f.cornerWidth()*0.5, cardW, avail, gogui.Column(gogui.ContainerCfg{
+		place(cx, cardsY, cardW, avail, gogui.Column(gogui.ContainerCfg{
 			Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(gap),
 			VAlign: gogui.VAlignMiddle, Content: cards,
 		})),

@@ -101,16 +101,10 @@ func (t Type) Label(s string, size float32, c gogui.Color, bold bool) gogui.View
 func (t Type) Fit(w *gogui.Window, s string, maxW, maxH float32, bold bool) float32 {
 	st := t.Style(maxH, gogui.White, bold)
 	text := t.Words(s)
-	size := min(maxH, GlyphMost)
-	for range 8 {
+	return widgets.Shrink(min(maxH, GlyphMost), maxW, func(size float32) float32 {
 		st.Size = size
-		wide := w.TextWidth(text, st)
-		if wide <= maxW || size <= 1 {
-			return size
-		}
-		size = max(min(size*maxW/wide, size-1), 1)
-	}
-	return size
+		return w.TextWidth(text, st)
+	})
 }
 
 func (t Type) Fitted(

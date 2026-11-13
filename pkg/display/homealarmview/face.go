@@ -82,6 +82,8 @@ func (v *View) face(w *gogui.Window, popup bool) *face {
 
 func (f *face) unit() float32 { return min(f.vw, f.vh) }
 
+func (f *face) tall() bool { return f.vh > f.vw }
+
 func (f *face) title() string {
 	switch f.state.Status {
 	case homealarm.Unknown:
@@ -265,16 +267,10 @@ func (f *face) short(sk skin, s string, maxW, size float32, bold bool) string {
 func (f *face) fit(sk skin, s string, maxW, maxH float32, bold bool) float32 {
 	st := sk.text(maxH, sk.ink, bold)
 	text := sk.words(s)
-	size := maxH
-	for range 8 {
+	return widgets.Shrink(maxH, maxW, func(size float32) float32 {
 		st.Size = size
-		wide := f.w.TextWidth(text, st)
-		if wide <= maxW || size <= 1 {
-			return size
-		}
-		size = max(min(size*maxW/wide, size-1), 1)
-	}
-	return size
+		return f.w.TextWidth(text, st)
+	})
 }
 
 type key struct {

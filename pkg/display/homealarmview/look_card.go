@@ -18,14 +18,21 @@ func cardLook(f *face) (gogui.View, skin) {
 	})
 	u := f.unit()
 	m := u * 0.05
+	tall := f.tall()
 	sideW := f.vw * 0.3
 	mainW := f.vw - sideW
+	if tall {
+		mainW = f.vw
+	}
 	tone := f.tone(sk)
 
-	views := []gogui.View{
-		place(mainW, 0, sideW, f.vh, gogui.Column(gogui.ContainerCfg{
+	var views []gogui.View
+	if !tall {
+		views = append(views, place(mainW, 0, sideW, f.vh, gogui.Column(gogui.ContainerCfg{
 			Sizing: gogui.FillFill, Color: sk.panel, Padding: gogui.NoPadding,
-		})),
+		})))
+	}
+	views = append(views,
 		place(m, m, mainW-2*m, u*0.09, gogui.Row(gogui.ContainerCfg{
 			Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.025),
 			VAlign: gogui.VAlignBottom,
@@ -34,7 +41,7 @@ func cardLook(f *face) (gogui.View, skin) {
 				sk.label(f.date(), u*0.04, sk.muted, false),
 			},
 		})),
-	}
+	)
 	disc := u * 0.34
 	title := f.title()
 	tsize := f.fit(sk, title, mainW-disc-3*m, u*0.15, true)
@@ -96,11 +103,23 @@ func cardLook(f *face) (gogui.View, skin) {
 			run: a.run,
 		}))
 	}
-	views = append(views, place(m, f.vh-m-ch, mainW-2*m, ch,
+	sos := u * 0.13
+	cardsY := f.vh - m - ch
+	if tall && f.emergency() {
+		cardsY -= sos + gap
+	}
+	views = append(views, place(m, cardsY, mainW-2*m, ch,
 		row(mainW-2*m, ch, gap, gogui.HAlignLeft, cards...)))
 
 	sx := mainW + m
 	sw := sideW - 2*m
+	sy := m + style.Reach()*1.4
+	sh := f.vh - 2*m - style.Reach()*1.4 - u*0.16
+	if tall {
+		sx, sw = m, f.vw-2*m
+		sy = m + u*0.12 + disc + u*0.04 + gap
+		sh = cardsY - gap - sy
+	}
 	rowH := u * 0.11
 	pair := func(id, glyph, label, value string, alert bool, run func()) gogui.View {
 		ink := sk.ink
@@ -181,14 +200,19 @@ func cardLook(f *face) (gogui.View, skin) {
 			side = append(side, sk.label(l, u*0.034, sk.ink, false), widgets.Divider())
 		}
 	}
-	views = append(views, place(sx, m+style.Reach()*1.4, sw, f.vh-2*m-style.Reach()*1.4-u*0.16,
-		gogui.Column(gogui.ContainerCfg{
-			Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.02),
-			Clip: true, Content: side,
-		})))
+	if sh > 0 {
+		views = append(views, place(sx, sy, sw, sh,
+			gogui.Column(gogui.ContainerCfg{
+				Sizing:  gogui.FillFill,
+				Padding: gogui.NoPadding,
+				Spacing: gogui.SpacingPx(u * 0.02),
+				Clip:    true,
+				Content: side,
+			})))
+	}
 	if f.emergency() {
-		views = append(views, place(sx, f.vh-m-u*0.13, sw, u*0.13,
-			f.emergencyKey(sk, sw, u*0.13, hex(0xd9363e), hex(0xffffff))))
+		views = append(views, place(sx, f.vh-m-sos, sw, sos,
+			f.emergencyKey(sk, sw, sos, hex(0xd9363e), hex(0xffffff))))
 	}
 	return gogui.Stack(gogui.ContainerCfg{
 		Width:   f.vw,

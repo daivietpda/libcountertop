@@ -29,8 +29,12 @@ func hardwareLook(f *face) (gogui.View, skin) {
 		})
 	}
 
+	tall := f.tall()
 	nixieW := f.vw * 0.26
 	nixieH := u * 0.2
+	if tall {
+		nixieW = f.vw - 2*m - f.cornerWidth()
+	}
 	digits := f.clock()
 	tubeSt := sk.text(nixieH*0.6, hex(0xff8a2a), false)
 	colon := f.blink(time.Second)
@@ -84,7 +88,12 @@ func hardwareLook(f *face) (gogui.View, skin) {
 		{say.T("homealarm.chip.alarm"), f.state.Status == homealarm.Triggered, sk.alarm},
 	}
 	stripX := m + nixieW + m
+	stripY := m
 	stripW := f.vw - stripX - m - f.cornerWidth()
+	if tall {
+		stripX, stripW = m, f.vw-2*m
+		stripY = m + nixieH + u*0.1
+	}
 	plateText := f.title()
 	if zones := f.zones(); len(zones) > 0 {
 		lamps = lamps[:0]
@@ -102,6 +111,8 @@ func hardwareLook(f *face) (gogui.View, skin) {
 	}
 	lampViews := make([]gogui.View, 0, len(lamps))
 	lampD := min(u*0.065, stripW/float32(len(lamps))*0.5)
+	lampInk := sk
+	lampInk.spaced = len(f.zones()) == 0
 	for _, l := range lamps {
 		c := hex(0x3f5a40)
 		if l.lit {
@@ -117,12 +128,12 @@ func hardwareLook(f *face) (gogui.View, skin) {
 						Radius: gogui.RadiusPx(lampD / 2), Color: c, ColorBorder: sk.edge,
 						SizeBorder: gogui.BorderPx(max(1, u*0.004)), Padding: gogui.NoPadding},
 				),
-				sk.label(l.label, u*0.026, sk.ink, true),
+				lampInk.label(l.label, u*0.026, sk.ink, true),
 			},
 		}))
 	}
 	views = append(views,
-		place(stripX, m, stripW, nixieH, gogui.Row(gogui.ContainerCfg{
+		place(stripX, stripY, stripW, nixieH, gogui.Row(gogui.ContainerCfg{
 			Sizing:  gogui.FillFill,
 			Color:   sk.panel,
 			Radius:  gogui.RadiusPx(sk.radius * 2),
@@ -132,16 +143,20 @@ func hardwareLook(f *face) (gogui.View, skin) {
 			Padding: gogui.NoPadding,
 			Content: lampViews,
 		})),
-		place(stripX, m+nixieH+u*0.015, stripW, u*0.055, plate(plateText, stripW, u*0.055)),
+		place(stripX, stripY+nixieH+u*0.015, stripW, u*0.055, plate(plateText, stripW, u*0.055)),
 	)
 
-	gridY := m + nixieH + u*0.1
+	gridY := stripY + nixieH + u*0.1
 	panicW := f.vw * 0.3
 	gridW := f.vw - 3*m - panicW
-	if !f.emergency() {
+	if !f.emergency() || tall {
 		gridW = f.vw - 2*m
 	}
 	gridH := f.vh - gridY - m - u*0.07
+	sosH := u * 0.18
+	if tall && f.emergency() {
+		gridH -= sosH + u*0.03
+	}
 	gap := u * 0.03
 	tileH := (gridH - gap) / 2
 	tile := func(id, big, small string, w float32, fill, ink gogui.Color, run func()) gogui.View {
@@ -220,22 +235,31 @@ func hardwareLook(f *face) (gogui.View, skin) {
 		),
 	)
 	if f.emergency() {
-		px := f.vw - m - panicW
+		px, py, pw, ph := f.vw-m-panicW, gridY, panicW, gridH
+		if tall {
+			px, py, pw, ph = m, gridY+gridH+u*0.03, gridW, sosH
+		}
+		holdW := panicW
+		if tall {
+			holdW = gridW * 0.4
+		}
 		views = append(
 			views,
-			place(px, gridY, panicW, gridH,
+			place(px, py, pw, ph,
 				f.emergencyKey(skin{
 					upper: true, spaced: true, radius: sk.radius, family: sk.family,
 					edge: hex(0xf2c200), edgeWide: max(3, u*0.008),
-				}, panicW, gridH, hex(0xb3261e), hex(0xffffff))),
-			place(
+				}, pw, ph, hex(0xb3261e), hex(0xffffff))),
+		)
+		if !tall {
+			views = append(views, place(
 				px,
 				f.vh-m-u*0.055,
-				panicW,
+				holdW,
 				u*0.055,
-				plate(say.T("homealarm.hold"), panicW, u*0.055),
-			),
-		)
+				plate(say.T("homealarm.hold"), holdW, u*0.055),
+			))
+		}
 	}
 	return gogui.Stack(gogui.ContainerCfg{
 		Width:   f.vw,

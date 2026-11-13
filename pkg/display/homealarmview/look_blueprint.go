@@ -69,7 +69,32 @@ func blueprintLook(f *face) (gogui.View, skin) {
 		})),
 	}
 
+	tall := f.tall()
 	leftW := f.vw*0.6 - m
+	headH := f.vh * 0.45
+	if tall {
+		leftW = f.vw - 2*m
+		headH = u * 0.34
+	}
+	acts := f.actions()
+	infoH := u * 0.075
+	gap := u * 0.025
+	rx := m + leftW + m*0.6
+	rw := f.vw - rx - m
+	top := m + f.cornerWidth()*0.45
+	avail := f.vh - m - infoH - gap - top
+	tableY, tableH := f.vh*0.5, f.vh*0.5-m
+	if tall {
+		rx, rw = m, leftW
+		n := float32(max(len(acts), 1))
+		block := n*(u*0.12+gap) + infoH
+		if f.emergency() {
+			block += u*0.11 + gap
+		}
+		top = f.vh - m - block
+		avail = block - infoH - gap
+		tableY, tableH = m+headH, top-gap-m-headH
+	}
 	title := f.title()
 	thin := f.fit(skin{upper: true}, title, leftW, u*0.2, false)
 	left := []gogui.View{
@@ -102,7 +127,7 @@ func blueprintLook(f *face) (gogui.View, skin) {
 			},
 		}))
 	}
-	views = append(views, place(m, m, leftW, f.vh*0.45, gogui.Column(gogui.ContainerCfg{
+	views = append(views, place(m, m, leftW, headH, gogui.Column(gogui.ContainerCfg{
 		Sizing:  gogui.FillFill,
 		Padding: gogui.NoPadding,
 		Spacing: gogui.SpacingPx(u * 0.025),
@@ -124,6 +149,7 @@ func blueprintLook(f *face) (gogui.View, skin) {
 			Radius:  gogui.NoRadius,
 			Padding: gogui.PadVH(0, u*0.015),
 			VAlign:  gogui.VAlignMiddle,
+			Clip:    true,
 			Content: []gogui.View{sk.label(text, rowH*0.45, c, bold)},
 		})
 	}
@@ -139,7 +165,7 @@ func blueprintLook(f *face) (gogui.View, skin) {
 				cell(say.T("homealarm.flip.state"), zw[3], sk.muted, false),
 			}}),
 		)
-		most := max(int((f.vh*0.5-m-u*0.05)/rowH)-2, 1)
+		most := max(int((tableH-u*0.05)/rowH)-2, 1)
 		slices.SortStableFunc(zones, func(a, b zoneLine) int {
 			if a.alert != b.alert {
 				if a.alert {
@@ -202,18 +228,15 @@ func blueprintLook(f *face) (gogui.View, skin) {
 			}}),
 		)
 	}
-	views = append(views, place(m, f.vh*0.5, leftW, f.vh*0.5-m, gogui.Column(gogui.ContainerCfg{
+	tableAlign := gogui.VAlignBottom
+	if tall {
+		tableAlign = gogui.VAlignTop
+	}
+	views = append(views, place(m, tableY, leftW, tableH, gogui.Column(gogui.ContainerCfg{
 		Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.015),
-		VAlign: gogui.VAlignBottom, Content: table,
+		VAlign: tableAlign, Content: table, Clip: true,
 	})))
 
-	rx := m + leftW + m*0.6
-	rw := f.vw - rx - m
-	acts := f.actions()
-	infoH := u * 0.075
-	gap := u * 0.025
-	top := m + f.cornerWidth()*0.45
-	avail := f.vh - m - infoH - gap - top
 	emH := float32(0)
 	if f.emergency() {
 		emH = min(u*0.11, avail*0.24)

@@ -21,15 +21,21 @@ func ringLook(f *face) (gogui.View, skin) {
 	m := u * 0.06
 	tone := f.tone(sk)
 
+	tall := f.tall()
 	thin := sk.text(u*0.24, sk.ink, false)
 	thin.Typeface = glyph.TypefaceRegular
-	clockW := f.vw * 0.28
+	clockX, clockY, clockW, clockH := m, f.vh*0.28, f.vw*0.28, f.vh*0.44
+	clockAlign := gogui.HAlignLeft
+	if tall {
+		clockX, clockY, clockW, clockH = m, m, f.vw-2*m, u*0.3
+		clockAlign = gogui.HAlignCenter
+	}
 	clockText := f.clock()
-	thin.Size = f.fit(sk, clockText, clockW*0.78, u*0.2, false)
+	thin.Size = f.fit(sk, clockText, min(clockW*0.78, u*0.6), u*0.2, false)
 	views := []gogui.View{
-		place(m, f.vh*0.28, clockW, f.vh*0.44, gogui.Column(gogui.ContainerCfg{
+		place(clockX, clockY, clockW, clockH, gogui.Column(gogui.ContainerCfg{
 			Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.02),
-			VAlign: gogui.VAlignMiddle,
+			VAlign: gogui.VAlignMiddle, HAlign: clockAlign,
 			Content: []gogui.View{
 				gogui.Label(clockText, thin),
 				sk.label(f.date(), u*0.045, sk.muted, false),
@@ -40,6 +46,11 @@ func ringLook(f *face) (gogui.View, skin) {
 	d := min(f.vh*0.66, f.vw*0.34)
 	cx := m + clockW + (f.vw*0.62-clockW-m-d)/2 + d/2
 	cy := f.vh / 2
+	if tall {
+		d = min(f.vw-2*m, f.vh*0.38)
+		cx = f.vw / 2
+		cy = clockY + clockH + u*0.03 + d/2
+	}
 	lead := tone
 	turn := f.phase(30*time.Second) * 2 * math.Pi
 	views = append(views, place(cx-d/2, cy-d/2, d, d, gogui.DrawCanvas(gogui.DrawCanvasCfg{
@@ -74,9 +85,16 @@ func ringLook(f *face) (gogui.View, skin) {
 
 	pillW := f.vw * 0.32
 	px := f.vw - m - pillW
+	py := m + f.cornerWidth()*0.5
 	acts := f.actions()
 	emH := u * 0.13
 	avail := f.vh - 2*m - f.cornerWidth()*0.5
+	if tall {
+		pillW = f.vw * 0.7
+		px = (f.vw - pillW) / 2
+		py = cy + d/2 + u*0.04
+		avail = f.vh - m - py
+	}
 	if f.emergency() {
 		avail -= emH + u*0.04
 	}
@@ -101,7 +119,7 @@ func ringLook(f *face) (gogui.View, skin) {
 	}
 	views = append(
 		views,
-		place(px, m+f.cornerWidth()*0.5, pillW, avail, gogui.Column(gogui.ContainerCfg{
+		place(px, py, pillW, avail, gogui.Column(gogui.ContainerCfg{
 			Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(gap),
 			VAlign: gogui.VAlignMiddle, Content: pills,
 		})),

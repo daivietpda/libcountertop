@@ -45,7 +45,7 @@ func matrixLook(f *face) (gogui.View, skin) {
 				HAlign:  gogui.HAlignCenter,
 				VAlign:  gogui.VAlignMiddle,
 				Padding: gogui.NoPadding,
-				Content: []gogui.View{sk.label(z.number, size, ink, false)},
+				Content: []gogui.View{digits.label(z.number, size, ink, false)},
 			}))
 		}
 		views = append(views, place(0, rainH-size*2.2, f.vw, size*1.8,

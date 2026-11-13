@@ -14,8 +14,15 @@ func shieldLook(f *face) (gogui.View, skin) {
 	sk.key = mix(sk.back, hex(0xffffff), 0.18)
 	u := f.unit()
 	m := u * 0.06
+	tall := f.tall()
 	cardsW := f.vw * 0.38
 	leftW := f.vw - cardsW - 3*m
+	leftH := f.vh - 2*m - u*0.1
+	if tall {
+		cardsW = f.vw - 2*m
+		leftW = cardsW
+		leftH = f.vh * 0.42
+	}
 
 	title := f.title()
 	tsize := f.fit(sk, title, leftW, u*0.2, true)
@@ -36,14 +43,19 @@ func shieldLook(f *face) (gogui.View, skin) {
 	views := []gogui.View{
 		place(m, m, f.vw*0.5, u*0.08,
 			sk.label(f.clock()+" "+f.meridiem()+"   "+f.date(), u*0.04, sk.muted, true)),
-		place(m, m+u*0.1, leftW, f.vh-2*m-u*0.1, gogui.Column(gogui.ContainerCfg{
+		place(m, m+u*0.1, leftW, leftH, gogui.Column(gogui.ContainerCfg{
 			Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.03),
 			VAlign: gogui.VAlignMiddle, Content: left,
 		})),
 	}
 	acts := f.actions()
 	emH := u * 0.13
+	cardsY := m + u*0.1
 	avail := f.vh - 2*m - u*0.1
+	if tall {
+		cardsY += leftH + u*0.03
+		avail = f.vh - m - cardsY
+	}
 	if f.emergency() {
 		avail -= emH + u*0.03
 	}
@@ -64,7 +76,7 @@ func shieldLook(f *face) (gogui.View, skin) {
 	}
 	views = append(
 		views,
-		place(f.vw-m-cardsW, m+u*0.1, cardsW, avail, gogui.Column(gogui.ContainerCfg{
+		place(f.vw-m-cardsW, cardsY, cardsW, avail, gogui.Column(gogui.ContainerCfg{
 			Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(gap),
 			VAlign: gogui.VAlignMiddle, Content: cards,
 		})),

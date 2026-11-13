@@ -22,16 +22,10 @@ func Lettering(weight glyph.Typeface, size float32, c theme.Color) gogui.TextSty
 }
 
 func Fitted(w *gogui.Window, text string, st gogui.TextStyle, maxW, maxH float32) float32 {
-	size := max(maxH, 1)
-	for range 8 {
+	return widgets.Shrink(maxH, maxW, func(size float32) float32 {
 		st.Size = size
-		wide := w.TextWidth(text, st)
-		if wide <= maxW || size <= 1 {
-			return size
-		}
-		size = max(min(size*maxW/wide, size-1), 1)
-	}
-	return size
+		return w.TextWidth(text, st)
+	})
 }
 
 const probe = 100

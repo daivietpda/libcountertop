@@ -63,8 +63,14 @@ func terminalLook(f *face) (gogui.View, skin) {
 		place(m, m*0.6+head, f.vw-2*m, max(1, u*0.004), line(f.vw-2*m)),
 	}
 
+	tall := f.tall()
 	leftW := f.vw*0.58 - m
 	y := m*0.6 + head + u*0.05
+	leftH := f.vh - y - u*0.16
+	if tall {
+		leftW = f.vw - 2*m
+		leftH = f.vh * 0.55
+	}
 	title := f.title()
 	tsize := f.fit(sk, title, leftW*0.9, u*0.13, true)
 	tone := f.tone(sk)
@@ -85,7 +91,7 @@ func terminalLook(f *face) (gogui.View, skin) {
 	var pager gogui.View
 	if zones := f.zones(); len(zones) > 0 {
 		lineH := u * 0.05
-		most := max(int((f.vh-y-u*0.16-tsize-u*0.2)/(lineH+u*0.012)), 1)
+		most := max(int((leftH-tsize-u*0.2)/(lineH+u*0.012)), 1)
 		slices.SortStableFunc(zones, func(a, b zoneLine) int {
 			if a.alert != b.alert {
 				if a.alert {
@@ -126,13 +132,19 @@ func terminalLook(f *face) (gogui.View, skin) {
 			left = append(left, sk.label(l, u*0.036, sk.muted, false))
 		}
 	}
-	views = append(views, place(m, y, leftW, f.vh-y-u*0.16, gogui.Column(gogui.ContainerCfg{
+	views = append(views, place(m, y, leftW, leftH, gogui.Column(gogui.ContainerCfg{
 		Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.012),
 		Clip: true, Content: left,
 	})))
 
 	rx := m + leftW + m
 	rw := f.vw - rx - m
+	cy, ch := y, f.vh-y-u*0.18
+	if tall {
+		rx, rw = m, f.vw-2*m
+		cy = y + leftH + u*0.03
+		ch = f.vh - cy - u*0.18
+	}
 	cmds := []gogui.View{sk.label("> "+say.T("homealarm.terminal.command"), u*0.045, sk.ink, false)}
 	rowH := u * 0.085
 	for i, a := range append(f.actions(), f.toggles()...) {
@@ -148,11 +160,13 @@ func terminalLook(f *face) (gogui.View, skin) {
 			run:     a.run,
 		}))
 	}
-	views = append(views,
-		place(rx-m/2, y, max(1, u*0.004), f.vh-y-u*0.18, gogui.Row(gogui.ContainerCfg{
+	if !tall {
+		views = append(views, place(rx-m/2, y, max(1, u*0.004), ch, gogui.Row(gogui.ContainerCfg{
 			Sizing: gogui.FillFill, Color: sk.muted, Padding: gogui.NoPadding,
-		})),
-		place(rx, y, rw, f.vh-y-u*0.18, gogui.Column(gogui.ContainerCfg{
+		})))
+	}
+	views = append(views,
+		place(rx, cy, rw, ch, gogui.Column(gogui.ContainerCfg{
 			Sizing: gogui.FillFill, Padding: gogui.NoPadding, Spacing: gogui.SpacingPx(u * 0.015),
 			Content: cmds,
 		})),

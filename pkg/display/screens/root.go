@@ -178,7 +178,7 @@ func (a *App) dashboard(w *gogui.Window) gogui.View {
 		layers = a.nativeDash(w, vw, vh, top, margin, pal)
 		if len(tabs) > 0 {
 			showing, _ := a.o.Tabs.Showing()
-			layers = append(layers, a.tabStrip(strip, tabs, showing.Key))
+			layers = append(layers, a.tabStrip(w, strip, tabs, showing.Key))
 		}
 	}
 

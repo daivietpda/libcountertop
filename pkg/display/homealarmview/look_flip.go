@@ -64,28 +64,43 @@ func flipLook(f *face) (gogui.View, skin) {
 		})
 	}
 
+	tall := f.tall()
 	title := f.title()
 	titleCells := float32(len([]rune(title)))
 	headW := f.vw*0.6 - m
-	cell := min(u*0.13, headW/max(titleCells, 1)/0.86)
 	clockCell := u * 0.1
+	headY := m
+	if tall {
+		headW = f.vw - 2*m
+		headY = m + clockCell + u*0.04
+	}
+	cell := min(u*0.13, headW/max(titleCells, 1)/0.86)
 	views := []gogui.View{
-		place(m, m, headW, cell, tiles(title, cell, tone, 0)),
+		place(m, headY, headW, cell, tiles(title, cell, tone, 0)),
 		place(f.vw-m-f.cornerWidth()-clockCell*0.86*5, m+u*0.01, clockCell*0.86*5, clockCell,
 			tiles(f.ticking(), clockCell, sk.ink, 0)),
 	}
 	if d := f.detail(); d != "" {
 		views = append(
 			views,
-			place(m, m+cell+u*0.02, headW, u*0.06, sk.label(d, u*0.045, sk.warn, true)),
+			place(m, headY+cell+u*0.02, headW, u*0.06, sk.label(d, u*0.045, sk.warn, true)),
 		)
 	}
 
-	listY := m + cell + u*0.11
+	listY := headY + cell + u*0.11
 	keyH := u * 0.13
 	listH := f.vh - listY - u*0.06 - keyH - 2*m
-	rowH := listH / flipRows
+	count := flipRows
+	stateX, stateW := f.vw*0.7, f.vw*0.3-m
+	if tall {
+		count = 10
+		stateX, stateW = f.vw*0.62, f.vw*0.38-m
+	}
+	rowH := listH / float32(count)
 	rc := rowH * 0.78
+	if tall {
+		rc = min(rc, stateW/(6*0.86))
+	}
 	type flipRow struct {
 		left, mid, right string
 		ink              gogui.Color
@@ -135,10 +150,14 @@ func flipLook(f *face) (gogui.View, skin) {
 			sk.label(heads[2], u*0.03, sk.muted, true),
 		},
 	})))
-	nameCells := max(int((f.vw*0.5)/(rc*0.86)), 4)
-	stateCells := max(int((f.vw*0.3-m)/(rc*0.86)), 4)
+	nameW := f.vw * 0.5
+	if tall {
+		nameW = stateX - m - f.vw*0.12 - u*0.02
+	}
+	nameCells := max(int(nameW/(rc*0.86)), 4)
+	stateCells := max(int(stateW/(rc*0.86)), 4)
 	for i, r := range rows {
-		if i >= flipRows {
+		if i >= count {
 			break
 		}
 		y := listY + u*0.06 + float32(i)*rowH
@@ -146,12 +165,12 @@ func flipLook(f *face) (gogui.View, skin) {
 		if r.mid != "" {
 			views = append(
 				views,
-				place(m+f.vw*0.12, y, f.vw*0.5, rc, tiles(clip(r.mid, nameCells), rc, sk.ink, 0)),
+				place(m+f.vw*0.12, y, nameW, rc, tiles(clip(r.mid, nameCells), rc, sk.ink, 0)),
 			)
 		}
 		views = append(
 			views,
-			place(f.vw*0.7, y, f.vw*0.3-m, rc, tiles(clip(r.right, stateCells), rc, r.ink, 0)),
+			place(stateX, y, stateW, rc, tiles(clip(r.right, stateCells), rc, r.ink, 0)),
 		)
 	}
 
