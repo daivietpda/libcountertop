@@ -12,6 +12,7 @@ import (
 
 type Options struct {
 	Slots    int
+	Screen   bool
 	DeviceID func(slot int) uint32
 	Read     func() schema.Wake
 	Write    func(slot int) schema.WakeWriter
@@ -28,13 +29,14 @@ type Settings struct {
 type slot struct {
 	wake *esphome.Button
 
-	threshold *esphome.Number
-	tone      *esphome.Select
-	delivery  *esphome.Select
-	buffer    *esphome.Number
-	followUp  *esphome.Number
-	maxListen *esphome.Number
-	maxThink  *esphome.Number
+	threshold  *esphome.Number
+	tone       *esphome.Select
+	delivery   *esphome.Select
+	buffer     *esphome.Number
+	followUp   *esphome.Number
+	maxListen  *esphome.Number
+	maxThink   *esphome.Number
+	wakeScreen *esphome.Switch
 }
 
 func New(options Options) *Settings {
@@ -129,6 +131,14 @@ func (s *Settings) newSlot(n int) slot {
 			Min: 5, Max: 300, Step: 5, Unit: "s",
 			Mode: esphome.NumberBox,
 		},
+		wakeScreen: &esphome.Switch{
+			Base: esphome.Base{
+				ObjectID: fmt.Sprintf("wake_screen_%d", n+1),
+				Name:     "Wake the screen",
+				Icon:     "mdi:monitor-eye",
+				Category: esphome.CategoryConfig,
+			},
+		},
 	}
 
 	if s.options.DeviceID != nil {
@@ -136,6 +146,7 @@ func (s *Settings) newSlot(n int) slot {
 		for _, b := range []*esphome.Base{
 			&sl.wake.Base, &sl.threshold.Base, &sl.tone.Base, &sl.delivery.Base,
 			&sl.buffer.Base, &sl.followUp.Base, &sl.maxListen.Base, &sl.maxThink.Base,
+			&sl.wakeScreen.Base,
 		} {
 			b.DeviceID = on
 		}
@@ -195,6 +206,12 @@ func (s *Settings) newSlot(n int) slot {
 			slog.Error("saving the thinking limit failed", "slot", n+1, "err", err)
 		}
 	}
+	sl.wakeScreen.OnCommand = func(on bool) {
+		sl.wakeScreen.Set(on)
+		if err := write().WakeScreen(on); err != nil {
+			slog.Error("saving wake the screen failed", "slot", n+1, "err", err)
+		}
+	}
 	return sl
 }
 
@@ -208,6 +225,9 @@ func (s *Settings) Entities() []esphome.Entity {
 			ents = append(ents, s.options.Extras(n)...)
 		}
 		ents = append(ents, sl.delivery, sl.buffer, sl.followUp, sl.maxListen, sl.maxThink)
+		if s.options.Screen {
+			ents = append(ents, sl.wakeScreen)
+		}
 	}
 	return ents
 }
@@ -226,6 +246,7 @@ func (s *Settings) Restore(words []schema.WakeWord) {
 		sl.followUp.Set(float32(saved.FollowUp))
 		sl.maxListen.Set(float32(saved.MaxListen))
 		sl.maxThink.Set(float32(saved.MaxThink))
+		sl.wakeScreen.Set(saved.WakeScreen)
 	}
 	slog.Info("restored", "what", "wake word settings", "slots", len(s.slots))
 }

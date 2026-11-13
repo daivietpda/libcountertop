@@ -49,6 +49,8 @@ type WakeWord struct {
 
 	Recordings int `json:"recordings"`
 
+	WakeScreen bool `json:"wake_screen"`
+
 	Look Look `json:"look"`
 }
 

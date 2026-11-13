@@ -98,6 +98,7 @@ assistants.setting.max_think: Elaborazione massima
 assistants.setting.recordings: Registrazioni conservate
 assistants.setting.threshold: Sensibilità attivazione
 assistants.setting.tone: Suono di attivazione
+assistants.setting.wake_screen: Riattiva lo schermo
 assistants.slot: Assistente {{.N}}
 assistants.talk: Parla ora
 assistants.talk.hint: Senza parola di attivazione

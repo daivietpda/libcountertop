@@ -211,6 +211,11 @@ func (p *AssistantPages) Slot(slot int) *shell.Page {
 					Kind:  menu.Chevron,
 					Value: saved.Look.Place.Label(),
 				},
+				{
+					Label: say.T("assistants.setting.wake_screen"),
+					Kind:  menu.Toggle,
+					On:    saved.WakeScreen,
+				},
 			}, []func(int){
 				func(int) { p.options.Requested.Emit(slot) },
 				choose,
@@ -219,6 +224,7 @@ func (p *AssistantPages) Slot(slot int) *shell.Page {
 				p.open(func() shell.View { return p.Tone(slot) }),
 				p.open(func() shell.View { return p.Delivery(slot) }),
 				nil,
+				p.wakeScreen(slot, !saved.WakeScreen),
 			}
 		},
 	}
@@ -368,6 +374,17 @@ func (p *AssistantPages) Threshold(slot int) func(int) {
 			func(w *config.WakeWord) { w.Threshold = v },
 		); err != nil {
 			slog.Error("saving the wake threshold failed", "slot", slot+1, "err", err)
+		}
+	}
+}
+
+func (p *AssistantPages) wakeScreen(slot int, on bool) func(int) {
+	return func(int) {
+		if err := p.options.Preferences.Word(
+			slot,
+			func(w *config.WakeWord) { w.WakeScreen = on },
+		); err != nil {
+			slog.Error("saving wake the screen failed", "slot", slot+1, "err", err)
 		}
 	}
 }

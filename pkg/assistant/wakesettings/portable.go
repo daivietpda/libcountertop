@@ -69,7 +69,7 @@ func (s *Settings) rows(n int) []setting.Setting[schema.Wake] {
 		return setting.Count(r, func(c *schema.Wake) *int { return value(word(c)) })
 	}
 
-	return []setting.Setting[schema.Wake]{
+	rows := []setting.Setting[schema.Wake]{
 		sensitivity,
 		setting.Pick(
 			tone,
@@ -93,6 +93,13 @@ func (s *Settings) rows(n int) []setting.Setting[schema.Wake] {
 			func(w *schema.WakeWord) *int { return &w.Recordings },
 		),
 	}
+	if s.options.Screen {
+		rows = append(rows, setting.Flag(
+			row("wake_screen"),
+			func(c *schema.Wake) *bool { return &word(c).WakeScreen },
+		))
+	}
+	return rows
 }
 
 func (s *Settings) save(row setting.Setting[schema.Wake], value string) error {

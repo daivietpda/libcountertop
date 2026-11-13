@@ -37,9 +37,12 @@ type Assistant struct {
 
 type Level interface{ Level() float64 }
 type Controller interface{ Stop() bool }
+type Waker interface{ Wake() }
 type Dependencies struct {
 	Microphone Level
 	Controller Controller
+	Words      WakeSettings
+	Screen     Waker
 }
 
 func New(options Dependencies) *Assistant {
@@ -54,7 +57,8 @@ func (a *Assistant) Show(s voice.Showing) {
 	if s.Reply != a.turn.Reply || a.turn.Phase == voice.Idle {
 		a.since = time.Now()
 	}
-	if a.turn.Phase == voice.Idle && s.Phase != voice.Idle {
+	began := a.turn.Phase == voice.Idle && s.Phase != voice.Idle
+	if began {
 		a.opened, a.closing = time.Now(), time.Time{}
 	}
 	if s.Phase == voice.Idle && a.turn.Phase != voice.Idle {
@@ -63,10 +67,22 @@ func (a *Assistant) Show(s voice.Showing) {
 	a.turn = s
 	a.mu.Unlock()
 
+	if began {
+		a.wakeScreen(s.Slot)
+	}
+
 	select {
 	case a.wake <- struct{}{}:
 	default:
 	}
+}
+
+func (a *Assistant) wakeScreen(slot int) {
+	o := a.options
+	if o.Words == nil || o.Screen == nil || !o.Words.Read().Slot(slot).WakeScreen {
+		return
+	}
+	o.Screen.Wake()
 }
 
 func (a *Assistant) Run(ctx context.Context) error {

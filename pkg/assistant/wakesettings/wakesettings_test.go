@@ -1,6 +1,7 @@
 package wakesettings
 
 import (
+	"slices"
 	"testing"
 
 	esphome "github.com/ygelfand/go-esphome-device"
@@ -58,5 +59,35 @@ func TestExtrasFollowTheToneOfTheirSlot(t *testing.T) {
 	}
 	if ents[3] != extra[0] || ents[12] != extra[1] {
 		t.Errorf("extras at the wrong place: %v %v", ents[3], ents[12])
+	}
+}
+
+func TestWakeTheScreenIsOfferedOnlyWithAScreen(t *testing.T) {
+	m := &memory{}
+	write := func(slot int) schema.WakeWriter { return schema.NewWakeWriter(m, slot) }
+	blind := New(Options{Slots: 2, Read: m.Read, Write: write})
+	seeing := New(Options{Slots: 2, Screen: true, Read: m.Read, Write: write})
+
+	if got, want := len(seeing.Entities()), len(blind.Entities())+2; got != want {
+		t.Fatalf("%d entities with a screen, want %d", got, want)
+	}
+	for _, e := range blind.Entities() {
+		if _, ok := e.(*esphome.Switch); ok {
+			t.Errorf("a device without a screen offers %T", e)
+		}
+	}
+	if slices.Contains(blind.Controls().Names(), "2.wake_screen") {
+		t.Error("a device without a screen has a wake_screen row")
+	}
+
+	seeing.slots[1].wakeScreen.OnCommand(true)
+	if !m.wake.Slot(1).WakeScreen || m.wake.Slot(0).WakeScreen {
+		t.Errorf("saved %+v", m.wake.Words)
+	}
+	if err := seeing.Controls().Change("1.wake_screen", "on"); err != nil {
+		t.Fatal(err)
+	}
+	if !m.wake.Slot(0).WakeScreen {
+		t.Error("the row did not turn assistant 1 on")
 	}
 }

@@ -97,6 +97,7 @@ assistants.setting.max_think: Max thinking time
 assistants.setting.recordings: Recordings kept
 assistants.setting.threshold: Wake word sensitivity
 assistants.setting.tone: Wake sound
+assistants.setting.wake_screen: Wake the screen
 assistants.slot: Assistant {{.N}}
 assistants.talk: Talk now
 assistants.talk.hint: Without the wake word
