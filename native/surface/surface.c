@@ -182,9 +182,6 @@ extern void sf_display(void **sret, int id) __asm__("_ZN7android21SurfaceCompose
 #if __ANDROID_API__ < 28
 extern void sf_open(void) __asm__("_ZN7android21SurfaceComposerClient21openGlobalTransactionEv");
 extern void sf_close(int sync) __asm__("_ZN7android21SurfaceComposerClient22closeGlobalTransactionEb");
-extern void sf_project(void *const *display, uint32_t orientation,
-	const int32_t *layers, const int32_t *frame)
-	__asm__("_ZN7android21SurfaceComposerClient20setDisplayProjectionERKNS_2spINS_7IBinderEEEjRKNS_4RectES8_");
 extern int sc_position(void *sc, float x, float y) __asm__("_ZN7android14SurfaceControl11setPositionEff");
 extern int sc_size(void *sc, uint32_t w, uint32_t h) __asm__("_ZN7android14SurfaceControl7setSizeEjj");
 extern int sc_alpha(void *sc, float a) __asm__("_ZN7android14SurfaceControl8setAlphaEf");
@@ -1229,12 +1226,8 @@ static void project_display(void) {
 }
 #else
 static int x501f(void) {
-	char value[PROP_VALUE_MAX] = {0};
-	if (__system_property_get("ro.product.device", value) > 0 &&
-		!strcmp(value, "msm8x53_som")) return 1;
-	if (__system_property_get("ro.product.model", value) > 0 &&
-		!strcmp(value, "iot_msm8x53_som")) return 1;
-	return 0;
+	const char *profile = getenv("COUNTERTOP_X501F");
+	return profile && !strcmp(profile, "1");
 }
 
 static int zygote_running(void) {
@@ -1246,8 +1239,6 @@ static int zygote_running(void) {
 // Once zygote is stopped, restore the X501F's landscape projection directly.
 static void project_display(void) {
 	if (!x501f()) return;
-	last_w = 1280;
-	last_h = 800;
 	if (zygote_running()) return;
 	void *display = NULL;
 	sf_display(&display, 0);
@@ -1255,7 +1246,7 @@ static void project_display(void) {
 	project_fn project = (project_fn)dlsym(RTLD_DEFAULT,
 		"_ZN7android21SurfaceComposerClient20setDisplayProjectionERKNS_2spINS_7IBinderEEEjRKNS_4RectES8_");
 	if (!display || !project) return;
-	const int32_t rect[4] = {0, 0, last_w, last_h};
+	const int32_t rect[4] = {0, 0, 1280, 800};
 	sf_open();
 	project(&display, 3, rect, rect);
 	sf_close(1);
@@ -1263,24 +1254,10 @@ static void project_display(void) {
 
 static void *watch_projection(void *unused) {
 	(void)unused;
-	int retries = 5;
 	for (;;) {
 		sleep(1);
-		int running = zygote_running();
-		if (running) {
-			retries = 5;
-		} else if (retries > 0) {
-			// WindowManager can finish a pending projection after zygote starts
-			// stopping. Reapply after it has exited, including when this helper
-			// first starts while the service is already stopping.
-			project_display();
-			retries--;
-		} else {
-			// Another boot-time component can overwrite the projection after the
-			// first retry window. Keep restoring the fixed X501F landscape while
-			// Android's window manager is absent.
-			retries = 5;
-		}
+		// A pending Android transaction can overwrite the projection after takeover.
+		project_display();
 	}
 	return NULL;
 }
@@ -1309,10 +1286,14 @@ int main(void) {
 #if __ANDROID_API__ >= 28
 	project_display();
 #else
-	project_display();
-	pthread_t projection_thread;
-	if (pthread_create(&projection_thread, NULL, watch_projection, NULL) == 0)
-		pthread_detach(projection_thread);
+	if (x501f()) {
+		last_w = 1280;
+		last_h = 800;
+		project_display();
+		pthread_t projection_thread;
+		if (pthread_create(&projection_thread, NULL, watch_projection, NULL) == 0)
+			pthread_detach(projection_thread);
+	}
 #endif
 	logi("ready on %s", SOCKET_PATH);
 	for (;;) {
