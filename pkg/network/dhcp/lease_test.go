@@ -44,3 +44,18 @@ func TestKeepingMatchesEitherSpelling(t *testing.T) {
 		t.Error("the same address written two ways did not match")
 	}
 }
+
+func TestCleanDomainDropsTheTrailingNUL(t *testing.T) {
+	cases := map[string]string{
+		"lan.example.com\x00": "lan.example.com",
+		"example.com":         "example.com",
+		" example.com \x00x":  "example.com",
+		"\x00":                "",
+		"":                    "",
+	}
+	for in, want := range cases {
+		if got := cleanDomain(in); got != want {
+			t.Errorf("cleanDomain(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

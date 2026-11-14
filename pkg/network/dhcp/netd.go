@@ -44,7 +44,8 @@ func (n *netd) cmd(args ...string) error {
 	n.seq++
 	quoted := make([]string, 0, len(args))
 	for _, a := range args {
-		quoted = append(quoted, quote(a))
+		// NUL ends a netd command; one inside an argument would cut the command short.
+		quoted = append(quoted, quote(strings.ReplaceAll(a, "\x00", "")))
 	}
 	line := fmt.Sprintf("%d %s\x00", n.seq, strings.Join(quoted, " "))
 
