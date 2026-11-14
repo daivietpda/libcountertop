@@ -154,16 +154,23 @@ func (c *Client) start() error {
 		}
 		m.channel = channel
 		m.depack = &depacketizer{codec: m.codec()}
-		if _, err := c.call(
+		r, err := c.call(
 			"SETUP",
 			c.control(m),
 			append(
 				extra,
 				fmt.Sprintf("Transport: RTP/AVP/TCP;unicast;interleaved=%d-%d", channel, channel+1),
-			)...); err != nil {
+			)...)
+		if err != nil {
 			return fmt.Errorf("rtsp: setup %s: %w", m.kind, err)
 		}
-		channel += 2
+		if v := param(r.headers.Get("Transport"), "interleaved"); v != "" {
+			lo, _, _ := strings.Cut(v, "-")
+			if n, err := strconv.Atoi(lo); err == nil && n >= 0 && n < 255 {
+				m.channel = n
+			}
+		}
+		channel = m.channel + 2
 	}
 	if !video && c.o.Video != nil {
 		return ErrNoVideo
