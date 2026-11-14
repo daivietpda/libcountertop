@@ -32,6 +32,10 @@ func NewTable() *setting.Table[schema.RTSP] {
 			},
 			func(c *schema.RTSP) *bool { return &c.Enabled },
 		),
+		setting.Flag(
+			setting.Setting[schema.RTSP]{Name: "audio", Group: Group, Icon: "mdi:microphone"},
+			func(c *schema.RTSP) *bool { return &c.Audio },
+		),
 		setting.Words(
 			setting.Setting[schema.RTSP]{Name: "username", Group: Group, Icon: "mdi:account"},
 			credentialsMost,

@@ -1309,10 +1309,12 @@ lovelace.entity.saver_dashboard: Dashboard del salvaschermo
 lovelace.setting.saver_dashboard: Dashboard del salvaschermo
 lovelace.entity.saver_view: Vista del salvaschermo
 lovelace.setting.saver_view: Vista del salvaschermo
+rtsp.entity.audio: Audio RTSP
 rtsp.entity.password: Password RTSP
 rtsp.entity.username: Nome utente RTSP
 rtsp.group.rtsp: RTSP
 rtsp.example.username: viewer
+rtsp.setting.audio: Includi audio
 rtsp.setting.enabled: Server RTSP
 rtsp.setting.password: Password
 rtsp.setting.username: Nome utente

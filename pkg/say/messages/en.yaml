@@ -1309,10 +1309,12 @@ lovelace.entity.saver_dashboard: Screensaver dashboard
 lovelace.setting.saver_dashboard: Screensaver dashboard
 lovelace.entity.saver_view: Screensaver view
 lovelace.setting.saver_view: Screensaver view
+rtsp.entity.audio: RTSP audio
 rtsp.entity.password: RTSP password
 rtsp.entity.username: RTSP username
 rtsp.group.rtsp: RTSP
 rtsp.example.username: viewer
+rtsp.setting.audio: Include audio
 rtsp.setting.enabled: RTSP server
 rtsp.setting.password: Password
 rtsp.setting.username: Username

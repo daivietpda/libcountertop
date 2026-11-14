@@ -30,6 +30,8 @@ type packet struct {
 type track struct {
 	pz       packetizer
 	base     uint32
+	zero     time.Duration
+	zeroed   bool
 	open     bool
 	channel  byte
 	udp      *net.UDPConn
@@ -46,6 +48,13 @@ func (t *track) release() {
 		_ = t.rtcp.Close()
 	}
 	*t = track{pz: t.pz, base: t.base}
+}
+
+func (t *track) stamp(pts time.Duration, rate int64) uint32 {
+	if !t.zeroed {
+		t.zero, t.zeroed = pts, true
+	}
+	return t.base + uint32(int64(pts-t.zero)*rate/int64(time.Second))
 }
 
 type session struct {
@@ -118,11 +127,11 @@ func (s *session) deliver(nalus [][]byte, key bool, sps, pps []byte, pts time.Du
 			return
 		}
 		s.started = true
-		if nalType(nalus[0]) != nalSPS && len(sps) > 0 && len(pps) > 0 {
-			nalus = append([][]byte{sps, pps}, nalus...)
-		}
 	}
-	ts := t.base + uint32(int64(pts)*9/100000)
+	if key && nalType(nalus[0]) != nalSPS && len(sps) > 0 && len(pps) > 0 {
+		nalus = append([][]byte{sps, pps}, nalus...)
+	}
+	ts := t.stamp(pts, 90000)
 	for _, p := range t.pz.packets(nalus, ts) {
 		if !s.queue(packet{b: p, track: videoTrack}) {
 			return
@@ -138,7 +147,7 @@ func (s *session) deliverAudio(au []byte, rate int, pts time.Duration) {
 	if !t.open {
 		return
 	}
-	ts := t.base + uint32(int64(pts)*int64(rate)/int64(time.Second))
+	ts := t.stamp(pts, int64(rate))
 	if !s.queue(packet{b: t.pz.aac(au, ts), track: audioTrack}) {
 		return
 	}

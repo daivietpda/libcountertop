@@ -179,6 +179,7 @@ var Shared = Coverage{
 		"Bluetooth.Scan":            "bluetooth.scan",
 		"API.Adopted":               "access.adopted",
 		"RTSP.Enabled":              "rtsp.enabled",
+		"RTSP.Audio":                "rtsp.audio",
 		"RTSP.Username":             "rtsp.username",
 		"RTSP.Password":             "rtsp.password",
 		"Lock.PIN":                  "screen.lock_pin",

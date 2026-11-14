@@ -41,6 +41,7 @@ type Options struct {
 	Auth     digest.Credentials
 	Mic      Mic
 	MicMuted func() bool
+	Audio    func() bool
 }
 
 type Server struct {
@@ -89,7 +90,7 @@ func (s *Server) Start() {
 	srv.Auth = s.options.Auth
 	served := s.options.Served()
 	s.sound = nil
-	if s.options.Mic != nil {
+	if s.options.Mic != nil && s.options.Audio != nil && s.options.Audio() {
 		a, err := newSound(s.options.Mic, s.options.MicMuted)
 		if err != nil {
 			slog.Warn("rtsp serves video only", "err", err)
