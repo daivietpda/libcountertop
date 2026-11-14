@@ -146,6 +146,37 @@ func TestARangeNeedsTheFeatureAndBothEnds(t *testing.T) {
 	}
 }
 
+func TestARangeOnlyThermostatSetsOneEndInHeatOrCool(t *testing.T) {
+	low, high := 68.0, 74.0
+	s := State{Mode: Heat, Low: &low, High: &high, features: featureRange}
+	if !s.Settable() || s.Setpoint() != &low {
+		t.Errorf("heat: settable %v, setpoint %v, want the low end", s.Settable(), s.Setpoint())
+	}
+	s.Mode = Cool
+	if !s.Settable() || s.Setpoint() != &high {
+		t.Errorf("cool: settable %v, setpoint %v, want the high end", s.Settable(), s.Setpoint())
+	}
+	s.Mode = Off
+	if s.Settable() || s.Setpoint() != nil {
+		t.Errorf("off: settable %v, setpoint %v", s.Settable(), s.Setpoint())
+	}
+	target := 70.0
+	s = State{
+		Mode:     Heat,
+		Target:   &target,
+		Low:      &low,
+		High:     &high,
+		features: featureTarget | featureRange,
+	}
+	if s.OneEnd() || s.Setpoint() != &target {
+		t.Errorf(
+			"an entity with a single target uses it: one end %v, setpoint %v",
+			s.OneEnd(),
+			s.Setpoint(),
+		)
+	}
+}
+
 func TestNoMoreThanFourAreChosen(t *testing.T) {
 	th, _, _ := setup()
 	for _, e := range []string{"climate.a", "climate.b", "climate.c", "climate.d", "climate.e"} {

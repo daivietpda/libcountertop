@@ -206,7 +206,7 @@ func (v *View) nudge(entity string, steps int) {
 	if !ok || !s.Settable() {
 		return
 	}
-	at := s.Target
+	at := s.Setpoint()
 	if s.Ranged() {
 		at = s.Low
 		if v.end(entity) == High {
@@ -231,7 +231,8 @@ func (v *View) place(entity string, to float64) {
 		p = &pending{}
 		v.pending[entity] = p
 	}
-	if s.Ranged() {
+	switch {
+	case s.Ranged():
 		low, high := *s.Low, *s.High
 		if v.endLocked(entity) == High {
 			high = max(to, low+s.Step)
@@ -239,7 +240,15 @@ func (v *View) place(entity string, to float64) {
 			low = min(to, high-s.Step)
 		}
 		p.low, p.high = &low, &high
-	} else {
+	case s.OneEnd():
+		low, high := *s.Low, *s.High
+		if s.Mode == thermostat.Cool {
+			high, low = to, min(low, to-s.Step)
+		} else {
+			low, high = to, max(high, to+s.Step)
+		}
+		p.low, p.high = &low, &high
+	default:
 		p.target = &to
 	}
 	p.at = time.Now()

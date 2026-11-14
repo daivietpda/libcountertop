@@ -96,8 +96,23 @@ func (s State) Ranged() bool {
 		(s.Mode == HeatCool || s.Mode == Auto)
 }
 
+func (s State) OneEnd() bool {
+	return s.features&featureTarget == 0 && s.features&featureRange != 0 &&
+		s.Low != nil && s.High != nil && (s.Mode == Heat || s.Mode == Cool)
+}
+
+func (s State) Setpoint() *float64 {
+	switch {
+	case !s.OneEnd():
+		return s.Target
+	case s.Mode == Heat:
+		return s.Low
+	}
+	return s.High
+}
+
 func (s State) Settable() bool {
-	return s.Ranged() || s.features&featureTarget != 0 && s.Target != nil
+	return s.Ranged() || s.OneEnd() || s.features&featureTarget != 0 && s.Target != nil
 }
 
 func (s State) Clamp(v float64) float64 {

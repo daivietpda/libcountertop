@@ -275,7 +275,7 @@ func (f *face) setpoint() *float64 {
 	if f.st.Mode == thermostat.Off {
 		return f.st.Current
 	}
-	return f.st.Target
+	return f.st.Setpoint()
 }
 
 func (f *face) goal(shown float64) *float64 {
