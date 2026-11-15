@@ -167,3 +167,22 @@ func TestOnLinkWithoutAMask(t *testing.T) {
 		t.Errorf("onLink of nothing gave %q", got)
 	}
 }
+
+func TestCmdKeepsANULInsideAnArgumentFromEndingTheCommand(t *testing.T) {
+	n, asked := fakeNetd(t, "200 1 ok\x00")
+
+	domain := "lan.example.com\x00"
+	if err := n.cmd("resolver", "setnetdns", "100", domain, "10.0.0.1"); err != nil {
+		t.Fatalf("cmd: %v", err)
+	}
+
+	want := `1 resolver setnetdns 100 lan.example.com 10.0.0.1`
+	select {
+	case got := <-asked:
+		if got != want {
+			t.Errorf("netd was sent %q, want %q", got, want)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("netd was sent nothing")
+	}
+}

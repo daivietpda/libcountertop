@@ -3,6 +3,7 @@ package dhcp
 import (
 	"fmt"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/insomniacslk/dhcp/dhcpv4"
@@ -29,6 +30,14 @@ type Lease struct {
 	Rebind  time.Time
 }
 
+// cleanDomain cuts option 15 at the first NUL. RFC 2132 section 2 says a
+// receiver must be prepared to delete trailing NULs, and a NUL left in would
+// end the netd command early.
+func cleanDomain(name string) string {
+	name, _, _ = strings.Cut(name, "\x00")
+	return strings.TrimSpace(name)
+}
+
 func leaseFrom(ack *dhcpv4.DHCPv4) (*Lease, error) {
 	mask := ack.SubnetMask()
 	if mask == nil {
@@ -39,7 +48,7 @@ func leaseFrom(ack *dhcpv4.DHCPv4) (*Lease, error) {
 		Address: net.IPNet{IP: ack.YourIPAddr, Mask: mask},
 		DNS:     ack.DNS(),
 		NTP:     ack.NTPServers(),
-		Domain:  ack.DomainName(),
+		Domain:  cleanDomain(ack.DomainName()),
 		Server:  ack.ServerIdentifier(),
 	}
 	if routers := ack.Router(); len(routers) > 0 {
