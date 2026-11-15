@@ -142,6 +142,101 @@ func TestAXPYAgreesWithTheGoImplementation(t *testing.T) {
 	}
 }
 
+func TestMulAddAgreesWithTheGoImplementation(t *testing.T) {
+	for _, n := range lengths {
+		a, b := random(n, uint64(n)+6000), random(n, uint64(n)+7000)
+		want, got := random(n, uint64(n)+8000), make([]float32, n)
+		copy(got, want)
+
+		mulAddGo(want, a, b)
+		MulAdd(got, a, b)
+
+		for i := range want {
+			if d := math.Abs(float64(got[i] - want[i])); d > 1e-5 {
+				t.Fatalf("n=%d index %d: %v, want %v", n, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+func TestDot4x4AgreesWithDot(t *testing.T) {
+	for _, n := range lengths {
+		stride := n + 3
+		x, w := random(4*stride, uint64(n)+9000), random(4*stride, uint64(n)+9500)
+		got := Dot4x4(x, stride, w, stride, n)
+		for i := range 4 {
+			for j := range 4 {
+				want := dotGo(x[i*stride:i*stride+n], w[j*stride:j*stride+n])
+				if d := math.Abs(
+					float64(got[i*4+j] - want),
+				); d > 1e-4*math.Max(
+					1,
+					math.Abs(float64(want)),
+				) {
+					t.Fatalf("n=%d (%d,%d): %v, want %v", n, i, j, got[i*4+j], want)
+				}
+			}
+		}
+	}
+}
+
+func TestAddAndMulAgreeWithTheGoImplementation(t *testing.T) {
+	for _, n := range lengths {
+		a, b := random(n, uint64(n)+10000), random(n, uint64(n)+11000)
+		for name, pair := range map[string][2]func(dst, a, b []float32){
+			"add": {Add, addGo},
+			"mul": {Mul, mulGo},
+		} {
+			got, want := make([]float32, n+1), make([]float32, n)
+			got[n] = 42
+			pair[0](got[:n], a, b)
+			pair[1](want, a, b)
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("%s n=%d index %d: %v, want %v", name, n, i, got[i], want[i])
+				}
+			}
+			if got[n] != 42 {
+				t.Fatalf("%s n=%d: wrote past the end", name, n)
+			}
+		}
+	}
+}
+
+func TestMulAddTiledRepeatsTheWeights(t *testing.T) {
+	for _, c := range []int{4, 8, 12, 36, 72, 5} {
+		for _, rows := range []int{1, 2, 7} {
+			n := rows * c
+			src, w := random(n, uint64(n)+12000), random(c, uint64(c)+13000)
+			got, want := random(n+1, 99), make([]float32, n)
+			copy(want, got)
+			got[n] = 42
+			MulAddTiled(got[:n], src, w)
+			for i := range want {
+				want[i] += src[i] * w[i%c]
+				if d := math.Abs(float64(got[i] - want[i])); d > 1e-5 {
+					t.Fatalf("c=%d rows=%d index %d: %v, want %v", c, rows, i, got[i], want[i])
+				}
+			}
+			if got[n] != 42 {
+				t.Fatalf("c=%d rows=%d: wrote past the end", c, rows)
+			}
+		}
+	}
+}
+
+func TestMulAddStaysInBounds(t *testing.T) {
+	for _, n := range lengths {
+		dst := make([]float32, n+1)
+		dst[n] = 42
+		a, b := random(n, 1), random(n, 2)
+		MulAdd(dst[:n], a, b)
+		if dst[n] != 42 {
+			t.Fatalf("n=%d: wrote past the end", n)
+		}
+	}
+}
+
 func TestAXPYExactly(t *testing.T) {
 	for _, n := range lengths {
 		x := make([]float32, n)

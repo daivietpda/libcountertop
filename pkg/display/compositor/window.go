@@ -2,6 +2,7 @@ package compositor
 
 import (
 	"image"
+	"math"
 	"sync"
 	"time"
 
@@ -28,6 +29,7 @@ type Window struct {
 	mu            sync.Mutex
 	title         string
 	width, height int
+	scale         uint32
 	suspended     bool
 	held          []*wayland.Callback
 
@@ -53,6 +55,32 @@ func (w *Window) Resize(width, height int) {
 	w.width, w.height = width, height
 	w.mu.Unlock()
 	w.configure()
+}
+
+func (w *Window) SetScale(scale float64) {
+	n := uint32(math.Round(scale * fractionDenominator))
+	w.mu.Lock()
+	changed := n != w.scale
+	w.scale = n
+	w.mu.Unlock()
+	if changed {
+		w.sendScale()
+	}
+}
+
+func (w *Window) sendScale() {
+	w.mu.Lock()
+	n := w.scale
+	w.mu.Unlock()
+	if n == 0 {
+		return
+	}
+	w.cl.mu.Lock()
+	f := w.surface.fraction
+	w.cl.mu.Unlock()
+	if f != nil {
+		f.PreferredScale(n)
+	}
 }
 
 func (w *Window) Suspend() {
@@ -124,6 +152,8 @@ func states(s ...xdg.ToplevelState) []byte {
 	}
 	return out
 }
+
+const fractionDenominator = 120
 
 var epoch = time.Now()
 

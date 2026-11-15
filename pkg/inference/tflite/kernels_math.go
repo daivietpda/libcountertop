@@ -3,6 +3,8 @@ package tflite
 import (
 	"fmt"
 	"math"
+
+	"github.com/ygelfand/libcountertop/pkg/inference/vec"
 )
 
 func broadcastShape(a, b []int) ([]int, error) {
@@ -79,32 +81,155 @@ func unary(f func(float32) float32) kernel {
 	}
 }
 
-func elementwise(f func(a, b float32) float32) kernel {
-	return func(o *OpDesc, in, out []*Tensor) error {
+type runFunc func(dst, a, b []float32, sa, sb int)
+
+func addRun(dst, a, b []float32, sa, sb int) {
+	if sa == 1 && sb == 1 {
+		vec.Add(dst, a, b)
+		return
+	}
+	for j := range dst {
+		dst[j] = a[j*sa] + b[j*sb]
+	}
+}
+
+func subRun(dst, a, b []float32, sa, sb int) {
+	for j := range dst {
+		dst[j] = a[j*sa] - b[j*sb]
+	}
+}
+
+func mulRun(dst, a, b []float32, sa, sb int) {
+	if sa == 1 && sb == 1 {
+		vec.Mul(dst, a, b)
+		return
+	}
+	for j := range dst {
+		dst[j] = a[j*sa] * b[j*sb]
+	}
+}
+
+func divRun(dst, a, b []float32, sa, sb int) {
+	for j := range dst {
+		dst[j] = a[j*sa] / b[j*sb]
+	}
+}
+
+func maxRun(dst, a, b []float32, sa, sb int) {
+	for j := range dst {
+		dst[j] = max(a[j*sa], b[j*sb])
+	}
+}
+
+func minRun(dst, a, b []float32, sa, sb int) {
+	for j := range dst {
+		dst[j] = min(a[j*sa], b[j*sb])
+	}
+}
+
+func squaredDiffRun(dst, a, b []float32, sa, sb int) {
+	for j := range dst {
+		d := a[j*sa] - b[j*sb]
+		dst[j] = d * d
+	}
+}
+
+func unravel(r int, shape, idx []int) []int {
+	for d := len(shape) - 1; d >= 0; d-- {
+		idx[d] = r % shape[d]
+		r /= shape[d]
+	}
+	return idx
+}
+
+func offset(idx, strides []int) int {
+	o := 0
+	for d, i := range idx {
+		o += i * strides[d]
+	}
+	return o
+}
+
+func elementwise(run runFunc) splitKernel {
+	return func(s Splitter, o *OpDesc, in, out []*Tensor) error {
 		a, b, y := in[0], in[1], out[0]
 		shape, err := broadcastShape(a.Shape, b.Shape)
 		if err != nil {
 			return err
 		}
 		y.resize(shape)
-		act := o.act
 		n := y.Count()
-
-		if a.Count() == n && b.Count() == n {
-			for i := range n {
-				y.F32[i] = activate(f(a.F32[i], b.F32[i]), act)
-			}
+		if n == 0 {
 			return nil
 		}
 
 		as, bs := strides(a.Shape, shape), strides(b.Shape, shape)
-		idx := make([]int, len(shape))
-		ao, bo := 0, 0
-		for i := range n {
-			y.F32[i] = activate(f(a.F32[ao], b.F32[bo]), act)
-			ao, bo = step(idx, shape, as, bs, ao, bo)
+		d, kind := innerRun(shape, func(d int) int {
+			k := 0
+			if as[d] != 0 {
+				k |= 1
+			}
+			if bs[d] != 0 {
+				k |= 2
+			}
+			return k
+		})
+		length := count(shape[d:])
+		sa, sb := kind&1, kind>>1&1
+		runs := n / length
+		if runs == 1 {
+			spread(s, n, n, func(lo, hi int) {
+				run(y.F32[lo:hi], a.F32[lo*sa:(hi-1)*sa+1], b.F32[lo*sb:(hi-1)*sb+1], sa, sb)
+				activateAll(y.F32[lo:hi], o.act)
+			})
+			return nil
 		}
+		na, nb := (length-1)*sa+1, (length-1)*sb+1
+		spread(s, n, runs, func(lo, hi int) {
+			idx := unravel(lo, shape[:d], make([]int, d))
+			ao, bo := offset(idx, as[:d]), offset(idx, bs[:d])
+			for i := lo * length; i < hi*length; i += length {
+				run(y.F32[i:i+length], a.F32[ao:ao+na], b.F32[bo:bo+nb], sa, sb)
+				ao, bo = step(idx, shape[:d], as[:d], bs[:d], ao, bo)
+			}
+			activateAll(y.F32[lo*length:hi*length], o.act)
+		})
 		return nil
+	}
+}
+
+func innerRun(shape []int, kind func(d int) int) (int, int) {
+	d, k := len(shape), -1
+	for d > 0 {
+		if shape[d-1] == 1 {
+			d--
+			continue
+		}
+		dk := kind(d - 1)
+		if k >= 0 && dk != k {
+			break
+		}
+		k = dk
+		d--
+	}
+	return d, k
+}
+
+func activateAll(v []float32, a Activation) {
+	switch a {
+	case ActNone:
+	case ActRelu:
+		for i, x := range v {
+			v[i] = max(x, 0)
+		}
+	case ActRelu6:
+		for i, x := range v {
+			v[i] = min(max(x, 0), 6)
+		}
+	default:
+		for i, x := range v {
+			v[i] = activate(x, a)
+		}
 	}
 }
 
@@ -143,7 +268,35 @@ func leakyRelu(o *OpDesc, in, out []*Tensor) error {
 	return nil
 }
 
-func reduceOp(init float32, combine func(acc, v float32) float32, mean bool) kernel {
+type reducer struct {
+	init  float32
+	merge func(dst, src []float32)
+	fold  func(acc float32, src []float32) float32
+}
+
+var (
+	sumReducer = reducer{
+		merge: func(dst, src []float32) { addRun(dst, dst, src, 1, 1) },
+		fold: func(acc float32, src []float32) float32 {
+			for _, v := range src {
+				acc += v
+			}
+			return acc
+		},
+	}
+	maxReducer = reducer{
+		init:  float32(math.Inf(-1)),
+		merge: func(dst, src []float32) { maxRun(dst, dst, src, 1, 1) },
+		fold: func(acc float32, src []float32) float32 {
+			for _, v := range src {
+				acc = max(acc, v)
+			}
+			return acc
+		},
+	}
+)
+
+func reduceOp(r reducer, mean bool) kernel {
 	return func(o *OpDesc, in, out []*Tensor) error {
 		x, y := in[0], out[0]
 		rank := len(x.Shape)
@@ -189,13 +342,25 @@ func reduceOp(init float32, combine func(acc, v float32) float32, mean bool) ker
 		}
 
 		for i := range y.F32 {
-			y.F32[i] = init
+			y.F32[i] = r.init
 		}
-		idx := make([]int, rank)
+		d, kept := innerRun(x.Shape, func(d int) int {
+			if axes[d] {
+				return 0
+			}
+			return 1
+		})
+		run := count(x.Shape[d:])
+		idx := make([]int, d)
 		yo := 0
-		for i := range x.Count() {
-			y.F32[yo] = combine(y.F32[yo], x.F32[i])
-			yo = step1(idx, x.Shape, os, yo)
+		for i := 0; run > 0 && i < x.Count(); i += run {
+			src := x.F32[i : i+run]
+			if kept == 1 {
+				r.merge(y.F32[yo:yo+run], src)
+			} else {
+				y.F32[yo] = r.fold(y.F32[yo], src)
+			}
+			yo = step1(idx, x.Shape[:d], os[:d], yo)
 		}
 
 		if mean {
@@ -245,7 +410,7 @@ func padZero(o *OpDesc, in, out []*Tensor) error {
 	return nil
 }
 
-func transpose(o *OpDesc, in, out []*Tensor) error {
+func transpose(sp Splitter, o *OpDesc, in, out []*Tensor) error {
 	x, p, y := in[0], in[1], out[0]
 	rank := len(x.Shape)
 	if len(p.I32) != rank {
@@ -273,13 +438,80 @@ func transpose(o *OpDesc, in, out []*Tensor) error {
 		ps[i] = xs[perm[i]]
 	}
 
-	idx := make([]int, rank)
-	xo := 0
-	for i := range y.F32 {
-		y.F32[i] = x.F32[xo]
-		xo = step1(idx, shape, ps, xo)
+	if rank == 0 {
+		copy(y.F32, x.F32)
+		return nil
 	}
+	n, stride := shape[rank-1], ps[rank-1]
+	if n == 0 {
+		return nil
+	}
+	if stride != 1 && rank >= 2 {
+		transposeBlocks(sp, y.F32, x.F32, shape, ps)
+		return nil
+	}
+	outer, ops := shape[:rank-1], ps[:rank-1]
+	spread(sp, len(y.F32), len(y.F32)/n, func(lo, hi int) {
+		idx := unravel(lo, outer, make([]int, rank-1))
+		xo := offset(idx, ops)
+		for i := lo * n; i < hi*n; i += n {
+			dst := y.F32[i : i+n]
+			if stride == 1 {
+				copy(dst, x.F32[xo:xo+n])
+			} else {
+				for j := range dst {
+					dst[j] = x.F32[xo+j*stride]
+				}
+			}
+			xo = step1(idx, outer, ops, xo)
+		}
+	})
 	return nil
+}
+
+func transposeBlocks(sp Splitter, yd, xd []float32, shape, ps []int) {
+	const block = 16
+	rank := len(shape)
+	rows, cols := shape[rank-2], shape[rank-1]
+	sr, sc := ps[rank-2], ps[rank-1]
+	plane := rows * cols
+	if plane == 0 {
+		return
+	}
+	outer, ops := shape[:rank-2], ps[:rank-2]
+	tile := func(base, xo, r0, r1 int) {
+		for ; r0 < r1; r0 += block {
+			re := min(r0+block, r1)
+			for c0 := 0; c0 < cols; c0 += block {
+				ce := min(c0+block, cols)
+				for c := c0; c < ce; c++ {
+					for r := r0; r < re; r++ {
+						yd[base+r*cols+c] = xd[xo+r*sr+c*sc]
+					}
+				}
+			}
+		}
+	}
+	planes := len(yd) / plane
+	if planes == 1 {
+		spread(sp, plane, (rows+block-1)/block, func(lo, hi int) {
+			tile(0, 0, lo*block, min(hi*block, rows))
+		})
+		return
+	}
+	spread(sp, len(yd), planes, func(lo, hi int) {
+		idx := unravel(lo, outer, make([]int, rank-2))
+		xo := offset(idx, ops)
+		for p := lo; p < hi; p++ {
+			tile(p*plane, xo, 0, rows)
+			xo = step1(idx, outer, ops, xo)
+		}
+	})
+}
+
+func share(y, x *Tensor, shape []int) {
+	y.Shape = append(y.Shape[:0], shape...)
+	y.F32, y.I32 = x.F32, x.I32
 }
 
 func copyData(y, x *Tensor) {
@@ -325,8 +557,7 @@ func reshape(o *OpDesc, in, out []*Tensor) error {
 		return fmt.Errorf("cannot reshape %d values into %v", total, target)
 	}
 
-	y.resize(target)
-	copyData(y, x)
+	share(y, x, target)
 	return nil
 }
 
@@ -361,8 +592,7 @@ func squeeze(o *OpDesc, in, out []*Tensor) error {
 			shape = append(shape, n)
 		}
 	}
-	y.resize(shape)
-	copyData(y, x)
+	share(y, x, shape)
 	return nil
 }
 
@@ -383,29 +613,31 @@ func expandDims(o *OpDesc, in, out []*Tensor) error {
 	shape = append(shape, x.Shape[:axis]...)
 	shape = append(shape, 1)
 	shape = append(shape, x.Shape[axis:]...)
-	y.resize(shape)
-	copyData(y, x)
+	share(y, x, shape)
 	return nil
 }
 
-var kernels = map[Op]kernel{
-	OpConv2D:         conv2D,
+var splitKernels = map[Op]splitKernel{
+	OpConv2D:        conv2D,
+	OpDepthwiseConv: depthwiseConv2D,
+	OpBatchMatMul:   batchMatMul,
+	OpSoftmax:       softmax,
+	OpTranspose:     transpose,
+
+	OpAdd:         elementwise(addRun),
+	OpSub:         elementwise(subRun),
+	OpMul:         elementwise(mulRun),
+	OpDiv:         elementwise(divRun),
+	OpMaximum:     elementwise(maxRun),
+	OpMinimum:     elementwise(minRun),
+	OpSquaredDiff: elementwise(squaredDiffRun),
+}
+
+var kernels = withSerial(map[Op]kernel{
 	OpMaxPool2D:      maxPool2D,
 	OpFullyConnected: fullyConnected,
-	OpBatchMatMul:    batchMatMul,
 	OpSVDF:           svdf,
-	OpSoftmax:        softmax,
 
-	OpAdd:     elementwise(func(a, b float32) float32 { return a + b }),
-	OpSub:     elementwise(func(a, b float32) float32 { return a - b }),
-	OpMul:     elementwise(func(a, b float32) float32 { return a * b }),
-	OpDiv:     elementwise(func(a, b float32) float32 { return a / b }),
-	OpMaximum: elementwise(func(a, b float32) float32 { return max(a, b) }),
-	OpMinimum: elementwise(func(a, b float32) float32 { return min(a, b) }),
-	OpSquaredDiff: elementwise(func(a, b float32) float32 {
-		d := a - b
-		return d * d
-	}),
 	OpGreaterEqual: compare(func(a, b float32) bool { return a >= b }),
 
 	OpLogistic: unary(func(v float32) float32 {
@@ -418,26 +650,33 @@ var kernels = map[Op]kernel{
 	OpSquare: unary(func(v float32) float32 { return v * v }),
 	OpRelu:   unary(func(v float32) float32 { return max(v, 0) }),
 	OpRelu6:  unary(func(v float32) float32 { return min(max(v, 0), 6) }),
+	OpTanh:   unary(func(v float32) float32 { return float32(math.Tanh(float64(v))) }),
 
 	OpLeakyRelu: leakyRelu,
+	OpGelu:      gelu,
 
-	OpMean: reduceOp(0, func(a, v float32) float32 { return a + v }, true),
-	OpSum:  reduceOp(0, func(a, v float32) float32 { return a + v }, false),
-	OpReduceMax: reduceOp(
-		float32(math.Inf(-1)),
-		func(a, v float32) float32 { return max(a, v) },
-		false,
-	),
+	OpMean:      reduceOp(sumReducer, true),
+	OpSum:       reduceOp(sumReducer, false),
+	OpReduceMax: reduceOp(maxReducer, false),
 
 	OpPad:        padZero,
-	OpTranspose:  transpose,
 	OpReshape:    reshape,
 	OpSqueeze:    squeeze,
 	OpExpandDims: expandDims,
 
-	OpShape:        shapeOf,
-	OpFill:         fill,
-	OpPack:         pack,
-	OpStridedSlice: stridedSlice,
-	OpReduceProd:   reduceProdI32,
+	OpShape:         shapeOf,
+	OpFill:          fill,
+	OpPack:          pack,
+	OpStridedSlice:  stridedSlice,
+	OpConcatenation: concatenation,
+	OpGatherND:      gatherND,
+	OpBroadcastTo:   broadcastTo,
+	OpReduceProd:    reduceProdI32,
+})
+
+func withSerial(plain map[Op]kernel) map[Op]kernel {
+	for op, k := range splitKernels {
+		plain[op] = inOrder(k)
+	}
+	return plain
 }

@@ -375,3 +375,72 @@ func TestIfRunsTheBranchItsConditionPicks(t *testing.T) {
 		f32(t, "if", in.Output(0).F32, tc.want)
 	}
 }
+
+func TestDepthwiseConvMultipliesEachInputChannel(t *testing.T) {
+	x := tf([]int{1, 2, 2, 2}, 1, 2, 3, 4, 5, 6, 7, 8)
+	tap := []float32{1, 10, 100, 1000}
+	var taps []float32
+	for range 4 {
+		taps = append(taps, tap...)
+	}
+	w := tf([]int{1, 2, 2, 4}, taps...)
+	bias := tf([]int{4}, 0.5, 0, 0, 0)
+	y := out()
+
+	o := &OpDesc{conv: convParams{strideW: 1, strideH: 1, dilationW: 1, dilationH: 1}}
+	if err := kernels[OpDepthwiseConv](o, []*Tensor{x, w, bias}, []*Tensor{y}); err != nil {
+		t.Fatal(err)
+	}
+	shape(t, "depthwise", y.Shape, []int{1, 1, 1, 4})
+	f32(t, "depthwise", y.F32, []float32{16.5, 160, 2000, 20000})
+}
+
+func TestDepthwiseConvSamePaddingAndRelu(t *testing.T) {
+	x := tf([]int{1, 1, 3, 2}, 1, -1, 2, -2, 3, -3)
+	w := tf([]int{1, 1, 3, 2}, 1, 1, 1, 1, 1, 1)
+	y := out()
+
+	o := &OpDesc{conv: convParams{
+		samePad: true, strideW: 1, strideH: 1, dilationW: 1, dilationH: 1, act: ActRelu,
+	}}
+	if err := kernels[OpDepthwiseConv](o, []*Tensor{x, w}, []*Tensor{y}); err != nil {
+		t.Fatal(err)
+	}
+	shape(t, "depthwise", y.Shape, []int{1, 1, 3, 2})
+	f32(t, "depthwise", y.F32, []float32{3, 0, 6, 0, 5, 0})
+}
+
+func TestGeluExactAndApproximate(t *testing.T) {
+	x := tf([]int{3}, -1, 0, 1)
+	y := out()
+	if err := kernels[OpGelu](&OpDesc{}, []*Tensor{x}, []*Tensor{y}); err != nil {
+		t.Fatal(err)
+	}
+	f32(t, "gelu", y.F32, []float32{-0.1586553, 0, 0.8413447})
+
+	if err := kernels[OpGelu](&OpDesc{approximate: true}, []*Tensor{x}, []*Tensor{y}); err != nil {
+		t.Fatal(err)
+	}
+	f32(t, "gelu tanh", y.F32, []float32{-0.1588080, 0, 0.8411920})
+}
+
+func TestExp32MatchesMathExp(t *testing.T) {
+	for x := float32(-87.3); x < 88.7; x += 0.01171875 {
+		got, want := float64(exp32(x)), math.Exp(float64(x))
+		if d := math.Abs(got-want) / want; d > 4e-7 {
+			t.Fatalf("exp32(%v) = %v, want %v (off by %.3g)", x, got, want, d)
+		}
+	}
+	if exp32(-100) != 0 || !math.IsInf(float64(exp32(100)), 1) {
+		t.Error("exp32 should underflow to 0 and overflow to +Inf")
+	}
+}
+
+func TestTanh(t *testing.T) {
+	x := tf([]int{3}, -1, 0, 2)
+	y := out()
+	if err := kernels[OpTanh](&OpDesc{}, []*Tensor{x}, []*Tensor{y}); err != nil {
+		t.Fatal(err)
+	}
+	f32(t, "tanh", y.F32, []float32{-0.7615942, 0, 0.9640276})
+}

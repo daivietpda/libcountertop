@@ -1,6 +1,9 @@
 package tflite
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 func shapeOf(o *OpDesc, in, out []*Tensor) error {
 	x, y := in[0], out[0]
@@ -35,6 +38,118 @@ func fill(o *OpDesc, in, out []*Tensor) error {
 		}
 	default:
 		return fmt.Errorf("fill has no %s value to spread", y.Type)
+	}
+	return nil
+}
+
+func concatenation(o *OpDesc, in, out []*Tensor) error {
+	y := out[0]
+	if len(in) == 0 {
+		return fmt.Errorf("concatenation has no inputs")
+	}
+	rank := len(in[0].Shape)
+	axis := o.axis
+	if axis < 0 {
+		axis += rank
+	}
+	if axis < 0 || axis >= rank {
+		return fmt.Errorf("axis %d out of range for rank %d", o.axis, rank)
+	}
+
+	shape := append([]int(nil), in[0].Shape...)
+	shape[axis] = 0
+	for _, x := range in {
+		if len(x.Shape) != rank {
+			return fmt.Errorf("inputs have ranks %d and %d", rank, len(x.Shape))
+		}
+		for d, n := range x.Shape {
+			if d != axis && n != shape[d] {
+				return fmt.Errorf("shapes %v and %v differ off axis %d", in[0].Shape, x.Shape, axis)
+			}
+		}
+		shape[axis] += x.Shape[axis]
+	}
+	y.resize(shape)
+
+	at := 0
+	for n := range count(shape[:axis]) {
+		for _, x := range in {
+			chunk := count(x.Shape[axis:])
+			if y.Type == Float32 {
+				copy(y.F32[at:at+chunk], x.F32[n*chunk:(n+1)*chunk])
+			} else {
+				copy(y.I32[at:at+chunk], x.I32[n*chunk:(n+1)*chunk])
+			}
+			at += chunk
+		}
+	}
+	activateAll(y.F32, o.act)
+	return nil
+}
+
+func gatherND(o *OpDesc, in, out []*Tensor) error {
+	params, indices, y := in[0], in[1], out[0]
+	if len(indices.Shape) == 0 {
+		return fmt.Errorf("gather_nd wants indices with at least one dimension")
+	}
+	last := len(indices.Shape) - 1
+	k := indices.Shape[last]
+	if k > len(params.Shape) {
+		return fmt.Errorf("index depth %d exceeds params rank %d", k, len(params.Shape))
+	}
+
+	shape := append(append([]int(nil), indices.Shape[:last]...), params.Shape[k:]...)
+	y.resize(shape)
+	slice := count(params.Shape[k:])
+	ps := contiguous(params.Shape)
+	for n := range count(indices.Shape[:last]) {
+		off := 0
+		for j := range k {
+			v := int(indices.I32[n*k+j])
+			if v < 0 || v >= params.Shape[j] {
+				return fmt.Errorf(
+					"index %d out of range for dimension %d of %d",
+					v,
+					j,
+					params.Shape[j],
+				)
+			}
+			off += v * ps[j]
+		}
+		if y.Type == Float32 {
+			copy(y.F32[n*slice:(n+1)*slice], params.F32[off:off+slice])
+		} else {
+			copy(y.I32[n*slice:(n+1)*slice], params.I32[off:off+slice])
+		}
+	}
+	return nil
+}
+
+func broadcastTo(o *OpDesc, in, out []*Tensor) error {
+	x, dims, y := in[0], in[1], out[0]
+	shape := make([]int, len(dims.I32))
+	for i, d := range dims.I32 {
+		shape[i] = int(d)
+	}
+	full, err := broadcastShape(x.Shape, shape)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(full, shape) {
+		return fmt.Errorf("%v does not broadcast to %v", x.Shape, shape)
+	}
+
+	y.resize(shape)
+	xs := strides(x.Shape, shape)
+	idx := make([]int, len(shape))
+	off := 0
+	for i := range y.Count() {
+		if y.Type == Float32 {
+			y.F32[i] = x.F32[off]
+		} else {
+			y.I32[i] = x.I32[off]
+		}
+		off = step1(idx, shape, xs, off)
 	}
 	return nil
 }

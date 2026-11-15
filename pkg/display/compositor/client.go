@@ -3,12 +3,15 @@ package compositor
 import (
 	"image"
 	"log/slog"
+	"math"
 	"os"
 	"slices"
 	"sync"
 	"sync/atomic"
 	"syscall"
 
+	"github.com/ygelfand/libcountertop/pkg/display/compositor/internal/fractionalscale"
+	"github.com/ygelfand/libcountertop/pkg/display/compositor/internal/viewporter"
 	"github.com/ygelfand/libcountertop/pkg/display/compositor/internal/wayland"
 	"github.com/ygelfand/libcountertop/pkg/display/compositor/internal/wire"
 	"github.com/ygelfand/libcountertop/pkg/display/compositor/internal/xdg"
@@ -21,6 +24,8 @@ const (
 	globalWmBase
 	globalOutput
 	globalSeat
+	globalViewporter
+	globalFractionalScale
 )
 
 type client struct {
@@ -38,11 +43,13 @@ type client struct {
 }
 
 type surface struct {
-	s       *wayland.Surface
-	pending *wayland.Buffer
-	damage  []image.Rectangle
-	frames  []*wayland.Callback
-	window  *Window
+	s        *wayland.Surface
+	pending  *wayland.Buffer
+	damage   []image.Rectangle
+	frames   []*wayland.Callback
+	source   image.Rectangle
+	fraction *fractionalscale.FractionalScaleV1
+	window   *Window
 }
 
 type pool struct {
@@ -116,6 +123,8 @@ func (d *display) GetRegistry(r *wayland.Registry) {
 	r.Global(globalWmBase, xdg.WmBaseInterface, 5)
 	r.Global(globalOutput, wayland.OutputInterface, 4)
 	r.Global(globalSeat, wayland.SeatInterface, 7)
+	r.Global(globalViewporter, viewporter.ViewporterInterface, 1)
+	r.Global(globalFractionalScale, fractionalscale.FractionalScaleManagerV1Interface, 1)
 }
 
 type registry client
@@ -151,8 +160,95 @@ func (r *registry) Bind(name uint32, id wire.NewID) {
 		s := wayland.BindSeat(cl.conn, id)
 		s.Listener = (*seat)(cl)
 		s.Capabilities(wayland.SeatCapabilityTouch)
+	case globalViewporter:
+		v := viewporter.BindViewporter(cl.conn, id)
+		v.Listener = &viewporterRequests{cl: cl, v: v}
+	case globalFractionalScale:
+		m := fractionalscale.BindFractionalScaleManagerV1(cl.conn, id)
+		m.Listener = &scaleManager{cl: cl, m: m}
 	}
 }
+
+type scaleManager struct {
+	cl *client
+	m  *fractionalscale.FractionalScaleManagerV1
+}
+
+func (s *scaleManager) Destroy() { s.cl.gone(s.m.ID()) }
+
+func (s *scaleManager) GetFractionalScale(
+	f *fractionalscale.FractionalScaleV1,
+	ws *wayland.Surface,
+) {
+	surf := s.cl.surfaces[ws]
+	f.Listener = &fractionalScale{cl: s.cl, f: f, s: surf}
+	if surf == nil {
+		return
+	}
+	s.cl.mu.Lock()
+	surf.fraction = f
+	s.cl.mu.Unlock()
+	if surf.window != nil {
+		surf.window.sendScale()
+	}
+}
+
+type fractionalScale struct {
+	cl *client
+	f  *fractionalscale.FractionalScaleV1
+	s  *surface
+}
+
+func (f *fractionalScale) Destroy() {
+	if f.s != nil {
+		f.cl.mu.Lock()
+		f.s.fraction = nil
+		f.cl.mu.Unlock()
+	}
+	f.cl.gone(f.f.ID())
+}
+
+type viewporterRequests struct {
+	cl *client
+	v  *viewporter.Viewporter
+}
+
+func (r *viewporterRequests) Destroy() { r.cl.gone(r.v.ID()) }
+
+func (r *viewporterRequests) GetViewport(v *viewporter.Viewport, s *wayland.Surface) {
+	v.Listener = &viewport{cl: r.cl, v: v, s: r.cl.surfaces[s]}
+}
+
+type viewport struct {
+	cl *client
+	v  *viewporter.Viewport
+	s  *surface
+}
+
+func (v *viewport) Destroy() {
+	if v.s != nil {
+		v.s.source = image.Rectangle{}
+	}
+	v.cl.gone(v.v.ID())
+}
+
+func (v *viewport) SetSource(x, y, width, height wire.Fixed) {
+	if v.s == nil {
+		return
+	}
+	if width.Float() < 0 {
+		v.s.source = image.Rectangle{}
+		return
+	}
+	v.s.source = image.Rect(
+		int(x.Float()),
+		int(y.Float()),
+		int(math.Ceil(x.Float()+width.Float())),
+		int(math.Ceil(y.Float()+height.Float())),
+	)
+}
+
+func (v *viewport) SetDestination(int32, int32) {}
 
 type compositor client
 
@@ -234,19 +330,24 @@ func (cl *client) present(s *surface, b *wayland.Buffer) {
 	if end > len(buf.pool.data) {
 		return
 	}
-	damage := s.damage
 	full := image.Rect(0, 0, buf.width, buf.height)
+	shown := full
+	if crop := s.source.Intersect(full); !crop.Empty() {
+		shown = crop
+	}
+	damage := s.damage
 	if len(damage) == 0 {
-		damage = []image.Rectangle{full}
+		damage = []image.Rectangle{shown}
 	}
 	for i := range damage {
-		damage[i] = damage[i].Intersect(full)
+		damage[i] = damage[i].Intersect(shown).Sub(shown.Min)
 	}
+	start := buf.offset + shown.Min.Y*buf.stride + shown.Min.X*4
 	s.window.Frames.Emit(Frame{
-		Pixels: buf.pool.data[buf.offset:end],
+		Pixels: buf.pool.data[start:end],
 		Stride: buf.stride,
-		Width:  buf.width,
-		Height: buf.height,
+		Width:  shown.Dx(),
+		Height: shown.Dy(),
 		Damage: damage,
 	})
 }

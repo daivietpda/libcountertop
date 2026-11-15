@@ -165,6 +165,7 @@ const (
 	outDepth  = 64
 	voiceRate = 16000
 	preRoll   = 250 * time.Millisecond
+	enrolling = 1e6
 )
 
 func (c *Conversation) send(what string, fn func() error) {
@@ -713,6 +714,13 @@ func (c *Conversation) Start(slot int) { c.post(event{kind: evStart, slot: slot}
 
 func (c *Conversation) Heard(slot int) {
 	at := time.Now()
+	if c.options.Voices != nil && !c.Busy() && c.options.Voices.Claim(at) {
+		if c.options.Arbiter != nil {
+			phrase, _ := c.PhraseFor(slot)
+			safe.Go("enrolment claim", func() { c.options.Arbiter.Decide(phrase, enrolling) })
+		}
+		return
+	}
 	if c.options.Arbiter == nil || c.Busy() {
 		c.post(event{kind: evStart, slot: slot, at: at})
 		return
@@ -749,6 +757,9 @@ func audioSettings() *api.VoiceAssistantAudioSettings {
 }
 
 func (c *Conversation) startAudio(slot int, heard time.Time) {
+	if c.options.Voices != nil && !heard.IsZero() {
+		c.options.Voices.Spoke(heard)
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	c.stopAudio = func() { cancel(); <-done }

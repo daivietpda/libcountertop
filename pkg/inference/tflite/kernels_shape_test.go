@@ -143,3 +143,86 @@ func TestReduceProdKeepsDims(t *testing.T) {
 	shape(t, "prod", y.Shape, []int{2, 1})
 	i32(t, "prod", y.I32, []int32{2, 12})
 }
+
+func TestConcatenationJoinsAlongAnInnerAxis(t *testing.T) {
+	a := tf([]int{2, 1}, 1, 2)
+	b := tf([]int{2, 2}, 10, 11, 20, 21)
+	y := out()
+	if err := kernels[OpConcatenation](
+		&OpDesc{axis: -1},
+		[]*Tensor{a, b},
+		[]*Tensor{y},
+	); err != nil {
+		t.Fatal(err)
+	}
+	shape(t, "concat", y.Shape, []int{2, 3})
+	f32(t, "concat", y.F32, []float32{1, 10, 11, 2, 20, 21})
+
+	if err := kernels[OpConcatenation](&OpDesc{}, []*Tensor{a, b}, []*Tensor{y}); err == nil {
+		t.Error("2x1 and 2x2 should not join on axis 0")
+	}
+
+	if err := kernels[OpConcatenation](&OpDesc{}, []*Tensor{b, b}, []*Tensor{y}); err != nil {
+		t.Fatal(err)
+	}
+	shape(t, "concat", y.Shape, []int{4, 2})
+	f32(t, "concat", y.F32, []float32{10, 11, 20, 21, 10, 11, 20, 21})
+}
+
+func TestGatherNDPicksRows(t *testing.T) {
+	params := tf([]int{3, 2}, 1, 2, 3, 4, 5, 6)
+	y := out()
+	if err := kernels[OpGatherND](
+		&OpDesc{},
+		[]*Tensor{params, ti([]int{4, 1}, 2, 0, 0, 1)},
+		[]*Tensor{y},
+	); err != nil {
+		t.Fatal(err)
+	}
+	shape(t, "gather_nd", y.Shape, []int{4, 2})
+	f32(t, "gather_nd", y.F32, []float32{5, 6, 1, 2, 1, 2, 3, 4})
+}
+
+func TestGatherNDPicksElements(t *testing.T) {
+	params := tf([]int{3, 2}, 1, 2, 3, 4, 5, 6)
+	y := out()
+	if err := kernels[OpGatherND](
+		&OpDesc{},
+		[]*Tensor{params, ti([]int{2, 2}, 1, 0, 2, 1)},
+		[]*Tensor{y},
+	); err != nil {
+		t.Fatal(err)
+	}
+	shape(t, "gather_nd", y.Shape, []int{2})
+	f32(t, "gather_nd", y.F32, []float32{3, 6})
+
+	if err := kernels[OpGatherND](
+		&OpDesc{},
+		[]*Tensor{params, ti([]int{1, 2}, 3, 0)},
+		[]*Tensor{y},
+	); err == nil {
+		t.Error("row 3 of 3 should be refused")
+	}
+}
+
+func TestBroadcastToRepeatsAlongOneAxes(t *testing.T) {
+	x := tf([]int{1, 2, 1}, 1, 2)
+	y := out()
+	if err := kernels[OpBroadcastTo](
+		&OpDesc{},
+		[]*Tensor{x, ti([]int{3}, 1, 2, 3)},
+		[]*Tensor{y},
+	); err != nil {
+		t.Fatal(err)
+	}
+	shape(t, "broadcast_to", y.Shape, []int{1, 2, 3})
+	f32(t, "broadcast_to", y.F32, []float32{1, 1, 1, 2, 2, 2})
+
+	if err := kernels[OpBroadcastTo](
+		&OpDesc{},
+		[]*Tensor{tf([]int{2}, 1, 2), ti([]int{1}, 1)},
+		[]*Tensor{y},
+	); err == nil {
+		t.Error("2 should not broadcast to 1")
+	}
+}

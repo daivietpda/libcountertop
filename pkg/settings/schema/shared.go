@@ -63,6 +63,7 @@ func DefaultShared() Shared {
 		Home:       DefaultHome(),
 		HomeAlarm:  DefaultHomeAlarm(),
 		Idle:       DefaultIdle(),
+		Lovelace:   DefaultLovelace(),
 		Media:      DefaultMedia(),
 		Network:    DefaultNetwork(),
 		Photos:     DefaultPhotos(),

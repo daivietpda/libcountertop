@@ -31,13 +31,14 @@ import (
 var bridge string
 
 const (
-	binding    = "countertopAuth"
-	focus      = "countertopKeyboard"
-	setToken   = "externalAuthSetToken"
-	revoked    = "externalAuthRevokeToken"
-	tokenLimit = 20 * time.Second
-	retryFirst = 5 * time.Second
-	retryMost  = time.Minute
+	binding     = "countertopAuth"
+	focus       = "countertopKeyboard"
+	setToken    = "externalAuthSetToken"
+	revoked     = "externalAuthRevokeToken"
+	tokenLimit  = 20 * time.Second
+	retryFirst  = 5 * time.Second
+	retryMost   = time.Minute
+	scaleSettle = 500 * time.Millisecond
 )
 
 var ErrClosed = errors.New("lovelaceview: no Home Assistant dashboard is open")
@@ -52,6 +53,7 @@ type Options struct {
 	Name   string
 	Engine *engine.Host
 	Path   func() string
+	Scale  func() int
 	Theme  func() string
 	Token  func(context.Context) (Token, error)
 	Hint   func() string
@@ -76,6 +78,7 @@ type View struct {
 	healing  bool
 	wait     time.Duration
 	retry    *time.Timer
+	rescale  *time.Timer
 }
 
 func NewView(o Options) *View {
@@ -149,6 +152,29 @@ func (v *View) Retry() {
 	if failed && page != nil && shown != "" {
 		_ = page.Navigate(shown)
 	}
+}
+
+func (v *View) Rescale() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.rescale != nil {
+		v.rescale.Stop()
+	}
+	v.rescale = time.AfterFunc(scaleSettle, func() {
+		v.mu.Lock()
+		page := v.page
+		v.mu.Unlock()
+		if page != nil {
+			page.Window.SetScale(v.scale())
+		}
+	})
+}
+
+func (v *View) scale() float64 {
+	if v.o.Scale == nil || v.o.Scale() <= 0 {
+		return 1
+	}
+	return float64(v.o.Scale()) / 100
 }
 
 func (v *View) Draw(at ui.Rect) gogui.View {
@@ -340,6 +366,7 @@ func (v *View) session(ctx context.Context) error {
 	if w > 0 && h > 0 {
 		page.Window.Resize(w, h)
 	}
+	page.Window.SetScale(v.scale())
 	if shown != "" {
 		if err := page.Navigate(shown); err != nil {
 			return err

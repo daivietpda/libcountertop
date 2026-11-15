@@ -6,9 +6,21 @@ type Lovelace struct {
 	User           string            `json:"user"`
 	Dashboard      LovelaceDashboard `json:"dashboard"`
 	View           LovelaceView      `json:"view"`
+	Scale          int               `json:"scale"`
 	SaverDashboard LovelaceDashboard `json:"saver_dashboard"`
 	SaverView      LovelaceView      `json:"saver_view"`
+	SaverScale     int               `json:"saver_scale"`
 	Theme          LovelaceTheme     `json:"theme,omitempty"`
+}
+
+const (
+	LovelaceScaleMin  = 50
+	LovelaceScaleMax  = 100
+	LovelaceScaleStep = 5
+)
+
+func DefaultLovelace() Lovelace {
+	return Lovelace{Scale: LovelaceScaleMax, SaverScale: LovelaceScaleMax}
 }
 
 type LovelaceTheme string

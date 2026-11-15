@@ -64,6 +64,7 @@ func New(o FeatureOptions) *Feature {
 		Name:   "home",
 		Engine: o.Engine,
 		Path:   func() string { c := o.Settings.Read(); return path(c.Dashboard, c.View) },
+		Scale:  func() int { return o.Settings.Read().Scale },
 		Theme:  func() string { return string(o.Settings.Read().Theme) },
 		Token:  f.token,
 		Hint:   f.hint,
@@ -76,6 +77,7 @@ func New(o FeatureOptions) *Feature {
 			c := o.Settings.Read()
 			return path(c.SaverDashboard, c.SaverView)
 		},
+		Scale:  func() int { return o.Settings.Read().SaverScale },
 		Theme:  func() string { return string(o.Settings.Read().Theme) },
 		Token:  f.token,
 		Hint:   f.hint,
@@ -267,6 +269,12 @@ func (f *Feature) store(s Setting, v string) error {
 		f.Home.Restart()
 		f.Saver.Restart()
 	}
+	if err == nil && s.Name == "scale" {
+		f.Home.Rescale()
+	}
+	if err == nil && s.Name == "saver_scale" {
+		f.Saver.Rescale()
+	}
 	if f.o.Redraw != nil {
 		f.o.Redraw()
 	}
@@ -355,6 +363,7 @@ func (f *Feature) table() *setting.Table[schema.Lovelace] {
 			first,
 			func(c *schema.Lovelace) *schema.LovelaceView { return &c.View },
 		),
+		scaleRow("scale", "mdi:magnify-scan", func(c *schema.Lovelace) *int { return &c.Scale }),
 		setting.Pick(
 			Setting{
 				Name:  "saver_dashboard",
@@ -377,6 +386,11 @@ func (f *Feature) table() *setting.Table[schema.Lovelace] {
 			first,
 			func(c *schema.Lovelace) *schema.LovelaceView { return &c.SaverView },
 		),
+		scaleRow(
+			"saver_scale",
+			"mdi:magnify-scan",
+			func(c *schema.Lovelace) *int { return &c.SaverScale },
+		),
 		setting.Pick(
 			Setting{Name: "theme", Group: Group, Icon: "mdi:palette", More: f.themes},
 			[]schema.LovelaceTheme{""},
@@ -385,6 +399,18 @@ func (f *Feature) table() *setting.Table[schema.Lovelace] {
 	}
 	return setting.NewTable("lovelace", []setting.Group{Group}, rows,
 		setting.Messages{Text: say.T, Missing: say.Missing})
+}
+
+func scaleRow(name, icon string, field func(*schema.Lovelace) *int) Setting {
+	return setting.Count(Setting{
+		Name:   name,
+		Group:  Group,
+		Icon:   icon,
+		Slider: true,
+		Min:    schema.LovelaceScaleMin,
+		Max:    schema.LovelaceScaleMax,
+		Unit:   "%",
+	}, field)
 }
 
 func path(dashboard schema.LovelaceDashboard, view schema.LovelaceView) string {

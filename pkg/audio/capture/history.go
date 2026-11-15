@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"errors"
 	"sync"
 	"time"
 )
@@ -12,7 +13,13 @@ type History struct {
 	buf    []int16
 	at     int
 	filled bool
+	total  int64
 }
+
+var (
+	ErrNotYet = errors.New("capture: window not recorded yet")
+	ErrGone   = errors.New("capture: window already overwritten")
+)
 
 func NewHistory(rate int, span time.Duration) *History {
 	return &History{rate: rate, buf: make([]int16, max(samplesIn(span, rate), 1))}
@@ -31,7 +38,46 @@ func (h *History) Add(frame []int16) {
 			h.at, h.filled = 0, true
 		}
 	}
+	h.total += int64(len(frame))
 }
+
+func (h *History) Mark() int64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.total
+}
+
+func (h *History) MarkBefore(d time.Duration) int64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return max(h.total-int64(samplesIn(d, h.rate)), 0)
+}
+
+func (h *History) Window(mark int64, before, after time.Duration) ([]int16, error) {
+	from := mark - int64(samplesIn(before, h.rate))
+	to := mark + int64(samplesIn(after, h.rate))
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	switch {
+	case to > h.total:
+		return nil, ErrNotYet
+	case from < 0 || from < h.total-int64(len(h.buf)):
+		return nil, ErrGone
+	}
+	out := make([]int16, to-from)
+	start := h.at - int(h.total-from)
+	if start < 0 {
+		start += len(h.buf)
+	}
+	for i := range out {
+		out[i] = h.buf[(start+i)%len(h.buf)]
+	}
+	return out, nil
+}
+
+func (h *History) Rate() int { return h.rate }
 
 func (h *History) Recent(d time.Duration) []int16 {
 	want := samplesIn(d, h.rate)

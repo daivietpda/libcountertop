@@ -1314,6 +1314,11 @@ lovelace.entity.saver_dashboard: Screensaver dashboard
 lovelace.setting.saver_dashboard: Screensaver dashboard
 lovelace.entity.saver_view: Screensaver view
 lovelace.setting.saver_view: Screensaver view
+lovelace.entity.scale: Dashboard render scale
+lovelace.setting.scale: Render scale
+lovelace.entity.saver_scale: Screensaver render scale
+lovelace.setting.saver_scale: Screensaver render scale
+lovelace.scale.value: "{{.N}}%"
 rtsp.entity.audio: RTSP audio
 rtsp.entity.password: RTSP password
 rtsp.entity.username: RTSP username
@@ -1699,6 +1704,13 @@ visual.synthwave: Synthwave
 visual.tesla: Tesla
 visual.thunderstorm: Thunderstorm
 voice.group.actions: Actions
+voicematch.phrase.calendar: "what's on my calendar today"
+voicematch.phrase.door: "lock the front door"
+voicematch.phrase.lights: "turn on the lights"
+voicematch.phrase.music: "play some music in the kitchen"
+voicematch.phrase.shopping: "add milk to the shopping list"
+voicematch.phrase.timer: "set a timer for ten minutes"
+voicematch.phrase.weather: "what's the weather like tomorrow"
 voice.group.commands: Commands
 voice.hacs: EchoLocal integration
 voice.hacs.hint: Actions need the EchoLocal integration in Home Assistant. Scan the code to open it in HACS, then install or update it.

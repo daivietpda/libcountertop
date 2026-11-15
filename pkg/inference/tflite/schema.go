@@ -86,6 +86,7 @@ const (
 	OpReshape        Op = 22
 	OpSoftmax        Op = 25
 	OpSVDF           Op = 27
+	OpTanh           Op = 28
 	OpConcatenation  Op = 2
 	OpPad            Op = 34
 	OpTranspose      Op = 39
@@ -111,8 +112,11 @@ const (
 	OpFill           Op = 94
 	OpLeakyRelu      Op = 98
 	OpSquaredDiff    Op = 99
+	OpGatherND       Op = 107
 	OpIf             Op = 118
 	OpBatchMatMul    Op = 126
+	OpBroadcastTo    Op = 130
+	OpGelu           Op = 150
 )
 
 var opNames = map[Op]string{
@@ -127,7 +131,8 @@ var opNames = map[Op]string{
 	OpReduceMax: "REDUCE_MAX", OpSquare: "SQUARE", OpLeakyRelu: "LEAKY_RELU",
 	OpShape: "SHAPE", OpReduceProd: "REDUCE_PROD", OpPack: "PACK", OpFill: "FILL",
 	OpSquaredDiff: "SQUARED_DIFFERENCE", OpBatchMatMul: "BATCH_MATMUL",
-	OpGreaterEqual: "GREATER_EQUAL", OpIf: "IF",
+	OpGreaterEqual: "GREATER_EQUAL", OpIf: "IF", OpTanh: "TANH", OpGatherND: "GATHER_ND",
+	OpBroadcastTo: "BROADCAST_TO", OpGelu: "GELU",
 }
 
 func (o Op) String() string {
@@ -200,6 +205,8 @@ type OpDesc struct {
 
 	adjX bool
 	adjY bool
+
+	approximate bool
 
 	then int
 	els  int
@@ -326,13 +333,24 @@ func (o *OpDesc) decodeOptions(t table, present bool) {
 	}
 
 	switch o.Op {
-	case OpConv2D, OpDepthwiseConv:
+	case OpConv2D:
 		o.conv.samePad = t.u8f(0, 0) == 0
 		o.conv.strideW = int(t.i32f(1, 1))
 		o.conv.strideH = int(t.i32f(2, 1))
 		o.conv.act = Activation(t.u8f(3, 0))
 		o.conv.dilationW = int(t.i32f(4, 1))
 		o.conv.dilationH = int(t.i32f(5, 1))
+
+	case OpDepthwiseConv:
+		o.conv.samePad = t.u8f(0, 0) == 0
+		o.conv.strideW = int(t.i32f(1, 1))
+		o.conv.strideH = int(t.i32f(2, 1))
+		o.conv.act = Activation(t.u8f(4, 0))
+		o.conv.dilationW = int(t.i32f(5, 1))
+		o.conv.dilationH = int(t.i32f(6, 1))
+
+	case OpGelu:
+		o.approximate = t.boolf(0, false)
 
 	case OpMaxPool2D:
 		o.pool.samePad = t.u8f(0, 0) == 0
@@ -342,8 +360,12 @@ func (o *OpDesc) decodeOptions(t table, present bool) {
 		o.pool.filterH = int(t.i32f(4, 1))
 		o.pool.act = Activation(t.u8f(5, 0))
 
-	case OpAdd, OpSub, OpMul, OpDiv, OpFullyConnected, OpConcatenation:
+	case OpAdd, OpSub, OpMul, OpDiv, OpFullyConnected:
 		o.act = Activation(t.u8f(0, 0))
+
+	case OpConcatenation:
+		o.axis = int(t.i32f(0, 0))
+		o.act = Activation(t.u8f(1, 0))
 
 	case OpMean, OpSum, OpReduceMax, OpReduceProd:
 		o.keepDims = t.boolf(0, false)

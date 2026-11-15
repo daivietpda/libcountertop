@@ -1314,6 +1314,11 @@ lovelace.entity.saver_dashboard: Dashboard del salvaschermo
 lovelace.setting.saver_dashboard: Dashboard del salvaschermo
 lovelace.entity.saver_view: Vista del salvaschermo
 lovelace.setting.saver_view: Vista del salvaschermo
+lovelace.entity.scale: Scala di rendering della dashboard
+lovelace.setting.scale: Scala di rendering
+lovelace.entity.saver_scale: Scala di rendering del salvaschermo
+lovelace.setting.saver_scale: Scala di rendering del salvaschermo
+lovelace.scale.value: "{{.N}}%"
 rtsp.entity.audio: Audio RTSP
 rtsp.entity.password: Password RTSP
 rtsp.entity.username: Nome utente RTSP
@@ -1699,6 +1704,13 @@ visual.synthwave: Synthwave
 visual.tesla: Tesla
 visual.thunderstorm: Temporale
 voice.group.actions: Azioni
+voicematch.phrase.calendar: "cosa ho in agenda oggi"
+voicematch.phrase.door: "chiudi la porta d'ingresso"
+voicematch.phrase.lights: "accendi le luci"
+voicematch.phrase.music: "metti un po' di musica in cucina"
+voicematch.phrase.shopping: "aggiungi il latte alla lista della spesa"
+voicematch.phrase.timer: "imposta un timer di dieci minuti"
+voicematch.phrase.weather: "che tempo fa domani"
 voice.group.commands: Comandi
 voice.hacs: Integrazione EchoLocal
 voice.hacs.hint: Le azioni richiedono l'integrazione EchoLocal in Home Assistant. Scansiona il codice per aprirla in HACS, poi installala o aggiornala.

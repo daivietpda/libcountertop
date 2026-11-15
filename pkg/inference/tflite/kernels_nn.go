@@ -7,7 +7,7 @@ import (
 	"github.com/ygelfand/libcountertop/pkg/inference/vec"
 )
 
-func conv2D(o *OpDesc, in, out []*Tensor) error {
+func conv2D(s Splitter, o *OpDesc, in, out []*Tensor) error {
 	p := o.conv
 	x, w, y := in[0], in[1], out[0]
 	if len(x.Shape) != 4 || len(w.Shape) != 4 {
@@ -28,6 +28,11 @@ func conv2D(o *OpDesc, in, out []*Tensor) error {
 	oh := outputSize(ih, kh, p.strideH, p.dilationH, p.samePad)
 	ow := outputSize(iw, kw, p.strideW, p.dilationW, p.samePad)
 	y.resize([]int{batch, oh, ow, oc})
+
+	if kh == 1 && kw == 1 && p.strideH == 1 && p.strideW == 1 {
+		pointwise(s, y.F32, x.F32, w.F32, bias, batch*ih*iw, ic, oc, p.act)
+		return nil
+	}
 
 	padH, padW := 0, 0
 	if p.samePad {
@@ -114,6 +119,173 @@ func conv2D(o *OpDesc, in, out []*Tensor) error {
 				}
 			}
 		}
+	}
+	return nil
+}
+
+func pointwise(
+	s Splitter,
+	yd, xd, wd, bias []float32,
+	pixels, ic, oc int,
+	act Activation,
+) {
+	spread(s, pixels*oc*ic/8, (pixels+3)/4, func(lo, hi int) {
+		r0, r1 := lo*4, min(hi*4, pixels)
+		ys := yd[r0*oc : r1*oc]
+		matMulT(ys, xd[r0*ic:r1*ic], wd, r1-r0, oc, ic)
+		if bias != nil {
+			for at := 0; at < len(ys); at += oc {
+				row := ys[at : at+oc]
+				addRun(row, row, bias[:oc], 1, 1)
+			}
+		}
+		activateAll(ys, act)
+	})
+}
+
+func matMulTOn(s Splitter, y, a, b []float32, m, n, k int) {
+	spread(s, m*n*k/8, (m+3)/4, func(lo, hi int) {
+		r0, r1 := lo*4, min(hi*4, m)
+		matMulT(y[r0*n:r1*n], a[r0*k:r1*k], b, r1-r0, n, k)
+	})
+}
+
+func matMulT(y, a, b []float32, m, n, k int) {
+	i := 0
+	for ; i+4 <= m; i += 4 {
+		ab := a[i*k:]
+		j := 0
+		for ; j+4 <= n; j += 4 {
+			s := vec.Dot4x4(ab, k, b[j*k:], k, k)
+			for r := range 4 {
+				row := y[(i+r)*n+j : (i+r)*n+j+4 : (i+r)*n+j+4]
+				row[0], row[1], row[2], row[3] = s[r*4], s[r*4+1], s[r*4+2], s[r*4+3]
+			}
+		}
+		for ; j < n; j++ {
+			bj := b[j*k : (j+1)*k]
+			for r := range 4 {
+				y[(i+r)*n+j] = vec.Dot(ab[r*k:(r+1)*k], bj)
+			}
+		}
+	}
+	for ; i < m; i++ {
+		ai := a[i*k : (i+1)*k]
+		for j := range n {
+			y[i*n+j] = vec.Dot(ai, b[j*k:(j+1)*k])
+		}
+	}
+}
+
+func transposed(dst, src []float32, rows, cols int) []float32 {
+	if cap(dst) < rows*cols {
+		dst = make([]float32, rows*cols)
+	}
+	dst = dst[:rows*cols]
+	for r := range rows {
+		for c, v := range src[r*cols : (r+1)*cols] {
+			dst[c*rows+r] = v
+		}
+	}
+	return dst
+}
+
+func depthwiseConv2D(s Splitter, o *OpDesc, in, out []*Tensor) error {
+	p := o.conv
+	x, w, y := in[0], in[1], out[0]
+	if len(x.Shape) != 4 || len(w.Shape) != 4 {
+		return fmt.Errorf("expected 4-D input and filter, got %v and %v", x.Shape, w.Shape)
+	}
+
+	batch, ih, iw, ic := x.Shape[0], x.Shape[1], x.Shape[2], x.Shape[3]
+	kh, kw, oc := w.Shape[1], w.Shape[2], w.Shape[3]
+	if ic == 0 || oc%ic != 0 {
+		return fmt.Errorf("filter has %d channels for %d input channels", oc, ic)
+	}
+	mult := oc / ic
+
+	var bias []float32
+	if len(in) > 2 && in[2] != nil {
+		bias = in[2].F32
+	}
+
+	oh := outputSize(ih, kh, p.strideH, p.dilationH, p.samePad)
+	ow := outputSize(iw, kw, p.strideW, p.dilationW, p.samePad)
+	y.resize([]int{batch, oh, ow, oc})
+
+	padH, padW := 0, 0
+	if p.samePad {
+		padH = padFor(p.strideH, p.dilationH, ih, kh, oh)
+		padW = padFor(p.strideW, p.dilationW, iw, kw, ow)
+	}
+
+	xd, wd, yd := x.F32, w.F32, y.F32
+	rowLen := ow * oc
+	tiled := mult == 1 && p.strideW == 1
+	spread(s, batch*oh*rowLen*kh*kw/4, batch*oh, func(lo, hi int) {
+		for r := lo; r < hi; r++ {
+			b, oy := r/oh, r%oh
+			yr := yd[r*rowLen : (r+1)*rowLen]
+			for px := 0; px < len(yr); px += oc {
+				if bias != nil {
+					copy(yr[px:px+oc], bias)
+				} else {
+					clear(yr[px : px+oc])
+				}
+			}
+			for ky := 0; ky < kh; ky++ {
+				iy := oy*p.strideH - padH + ky*p.dilationH
+				if iy < 0 || iy >= ih {
+					continue
+				}
+				xrow := (b*ih + iy) * iw
+				for kx := 0; kx < kw; kx++ {
+					ws := wd[(ky*kw+kx)*oc : (ky*kw+kx+1)*oc]
+					if tiled {
+						x0 := kx*p.dilationW - padW
+						l, h := max(0, -x0), min(ow, iw-x0)
+						if h > l {
+							vec.MulAddTiled(yr[l*oc:h*oc], xd[(xrow+l+x0)*ic:(xrow+h+x0)*ic], ws)
+						}
+						continue
+					}
+					for ox := 0; ox < ow; ox++ {
+						ix := ox*p.strideW - padW + kx*p.dilationW
+						if ix < 0 || ix >= iw {
+							continue
+						}
+						xs := xd[(xrow+ix)*ic : (xrow+ix+1)*ic]
+						row := yr[ox*oc : (ox+1)*oc]
+						if mult == 1 {
+							vec.MulAdd(row, xs, ws)
+							continue
+						}
+						for i, v := range xs {
+							vec.AXPY(row[i*mult:(i+1)*mult], v, ws[i*mult:(i+1)*mult])
+						}
+					}
+				}
+			}
+			activateAll(yr, p.act)
+		}
+	})
+	return nil
+}
+
+func gelu(o *OpDesc, in, out []*Tensor) error {
+	x, y := in[0], out[0]
+	y.resize(x.Shape)
+	if o.approximate {
+		k := math.Sqrt(2 / math.Pi)
+		for i, v := range x.F32 {
+			f := float64(v)
+			y.F32[i] = float32(0.5 * f * (1 + math.Tanh(k*(f+0.044715*f*f*f))))
+		}
+		return nil
+	}
+	for i, v := range x.F32 {
+		f := float64(v)
+		y.F32[i] = float32(0.5 * f * (1 + math.Erf(f/math.Sqrt2)))
 	}
 	return nil
 }
@@ -254,33 +426,61 @@ func svdf(o *OpDesc, in, out []*Tensor) error {
 	return nil
 }
 
-func softmax(o *OpDesc, in, out []*Tensor) error {
+// Cephes expf.
+func exp32(x float32) float32 {
+	switch {
+	case x > 88.72283:
+		return float32(math.Inf(1))
+	case x < -87.33654:
+		return 0
+	case x != x:
+		return x
+	}
+	n := float32(math.Floor(float64(x*1.442695041 + 0.5)))
+	z := x - n*0.693359375 - n*-2.12194440e-4
+	p := float32(1.9875691500e-4)
+	p = p*z + 1.3981999507e-3
+	p = p*z + 8.3334519073e-3
+	p = p*z + 4.1665795894e-2
+	p = p*z + 1.6666665459e-1
+	p = p*z + 5.0000001201e-1
+	p = p*z*z + z + 1
+	if n > 127 {
+		return p * 2 * math.Float32frombits(254<<23)
+	}
+	return p * math.Float32frombits(uint32(int32(n)+127)<<23)
+}
+
+func softmax(s Splitter, o *OpDesc, in, out []*Tensor) error {
 	x, y := in[0], out[0]
 	n := x.Dim(-1)
 	if n == 0 || x.Count()%n != 0 {
 		return fmt.Errorf("input %v", x.Shape)
 	}
 	y.resize(x.Shape)
-	for at := 0; at < x.Count(); at += n {
-		row, dst := x.F32[at:at+n], y.F32[at:at+n]
-		top := row[0]
-		for _, v := range row {
-			top = max(top, v)
+	spread(s, x.Count()*4, x.Count()/n, func(lo, hi int) {
+		for at := lo * n; at < hi*n; at += n {
+			row, dst := x.F32[at:at+n], y.F32[at:at+n]
+			top := row[0]
+			for _, v := range row {
+				top = max(top, v)
+			}
+			var sum float64
+			for i, v := range row {
+				e := exp32(o.beta * (v - top))
+				dst[i] = e
+				sum += float64(e)
+			}
+			inv := float32(1 / sum)
+			for i := range dst {
+				dst[i] *= inv
+			}
 		}
-		var sum float64
-		for i, v := range row {
-			e := math.Exp(float64(o.beta * (v - top)))
-			dst[i] = float32(e)
-			sum += e
-		}
-		for i := range dst {
-			dst[i] = float32(float64(dst[i]) / sum)
-		}
-	}
+	})
 	return nil
 }
 
-func batchMatMul(o *OpDesc, in, out []*Tensor) error {
+func batchMatMul(s Splitter, o *OpDesc, in, out []*Tensor) error {
 	a, b, y := in[0], in[1], out[0]
 	adjX, adjY := o.adjX, o.adjY
 	if len(a.Shape) < 2 || len(b.Shape) < 2 {
@@ -310,32 +510,20 @@ func batchMatMul(o *OpDesc, in, out []*Tensor) error {
 	bs := strides(b.Shape[:len(b.Shape)-2], batchShape)
 	idx := make([]int, len(batchShape))
 
+	var ta, tb []float32
 	ao, bo := 0, 0
 	for batch := 0; batch < batches; batch++ {
-		am := a.F32[ao*m*k:]
-		bm := b.F32[bo*kb*n:]
-		ym := y.F32[batch*m*n:]
-
-		for i := 0; i < m; i++ {
-			for j := 0; j < n; j++ {
-				var acc float32
-				for p := 0; p < k; p++ {
-					var av, bv float32
-					if adjX {
-						av = am[p*m+i]
-					} else {
-						av = am[i*k+p]
-					}
-					if adjY {
-						bv = bm[j*kb+p]
-					} else {
-						bv = bm[p*n+j]
-					}
-					acc += av * bv
-				}
-				ym[i*n+j] = acc
-			}
+		am := a.F32[ao*m*k : (ao+1)*m*k]
+		bm := b.F32[bo*kb*n : (bo+1)*kb*n]
+		if adjX {
+			ta = transposed(ta, am, k, m)
+			am = ta
 		}
+		if !adjY {
+			tb = transposed(tb, bm, k, n)
+			bm = tb
+		}
+		matMulTOn(s, y.F32[batch*m*n:(batch+1)*m*n], am, bm, m, n, k)
 		ao, bo = step(idx, batchShape, as, bs, ao, bo)
 	}
 	return nil

@@ -59,15 +59,14 @@ func (b Board) View(at ui.Rect, peers []peer.Peer, pal theme.Theme) gogui.View {
 			Content: columns,
 		}))
 	}
-	return widgets.Placed(at, gogui.Column(gogui.ContainerCfg{
-		ID:         b.ID,
-		Sizing:     gogui.FillFill,
-		Padding:    gogui.NoPadding,
-		Spacing:    gogui.SpacingPx(gap),
-		Scrollable: true,
-		OnGesture:  b.UI.HoldStill,
-		Content:    views,
-	}))
+	return gogui.Column(gogui.ContainerCfg{
+		ID:      b.ID,
+		Width:   float32(at.W),
+		Sizing:  gogui.FixedFit,
+		Padding: gogui.NoPadding,
+		Spacing: gogui.SpacingPx(gap),
+		Content: views,
+	})
 }
 
 func (b Board) tile(id string, side float32, p peer.Peer, pal theme.Theme) gogui.View {

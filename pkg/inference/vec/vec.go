@@ -35,6 +35,45 @@ func axpyGo(dst []float32, gain float32, x []float32) {
 	}
 }
 
+func dot4x4Go(out *[16]float32, x []float32, xs int, w []float32, ws int, n int) {
+	for i := range 4 {
+		xr := x[i*xs : i*xs+n]
+		for j := range 4 {
+			out[i*4+j] += dotGo(xr, w[j*ws:j*ws+n])
+		}
+	}
+}
+
+func mulAddTiledGo(dst, src, w []float32) {
+	c := len(w)
+	src = src[:len(dst)]
+	for at := 0; at < len(dst); at += c {
+		end := min(at+c, len(dst))
+		mulAddGo(dst[at:end], src[at:end], w[:end-at])
+	}
+}
+
+func addGo(dst, a, b []float32) {
+	a, b = a[:len(dst)], b[:len(dst)]
+	for i := range dst {
+		dst[i] = a[i] + b[i]
+	}
+}
+
+func mulGo(dst, a, b []float32) {
+	a, b = a[:len(dst)], b[:len(dst)]
+	for i := range dst {
+		dst[i] = a[i] * b[i]
+	}
+}
+
+func mulAddGo(dst, a, b []float32) {
+	dst, b = dst[:len(a)], b[:len(a)]
+	for i, v := range a {
+		dst[i] += v * b[i]
+	}
+}
+
 func SumSquares(a []float32) float32 {
 	var s0, s1, s2, s3 float32
 	i := 0

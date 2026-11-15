@@ -13,6 +13,9 @@ type Tensor struct {
 	F32   []float32
 	I32   []int32
 	Const bool
+
+	arena *arena
+	slot  []float32
 }
 
 func count(shape []int) int {
@@ -41,7 +44,15 @@ func (t *Tensor) resize(shape []int) {
 	switch t.Type {
 	case Float32:
 		if cap(t.F32) < n {
-			t.F32 = make([]float32, n)
+			switch {
+			case cap(t.slot) >= n:
+				t.F32 = t.slot
+			case t.arena == nil:
+				t.F32 = make([]float32, n)
+			default:
+				t.arena.put(t.F32)
+				t.F32 = t.arena.take(n)
+			}
 		}
 		t.F32 = t.F32[:n]
 	default:
@@ -53,11 +64,22 @@ func (t *Tensor) resize(shape []int) {
 }
 
 type Interpreter struct {
-	model    *Model
 	graph    *Subgraph
 	tensors  []*Tensor
 	branches map[int]*Interpreter
+	split    Splitter
+	plan     *plan
 }
+
+type Splitter interface {
+	Split(n int, part func(lo, hi int))
+}
+
+type serial struct{}
+
+func (serial) Split(n int, part func(lo, hi int)) { part(0, n) }
+
+func (in *Interpreter) SetSplitter(s Splitter) { in.split = s }
 
 func New(m *Model) (*Interpreter, error) {
 	return build(m, 0, map[int]*Interpreter{})
@@ -72,7 +94,6 @@ func build(m *Model, at int, built map[int]*Interpreter) (*Interpreter, error) {
 	}
 	g := m.Subgraphs[at]
 	in := &Interpreter{
-		model:    m,
 		graph:    g,
 		tensors:  make([]*Tensor, len(g.Tensors)),
 		branches: built,
@@ -98,9 +119,14 @@ func build(m *Model, at int, built map[int]*Interpreter) (*Interpreter, error) {
 					d.Type,
 				)
 			}
-			t.resize(t.Shape)
 		}
 		in.tensors[i] = t
+	}
+	in.plan = planFor(g, in.tensors)
+	for _, t := range in.tensors {
+		if !t.Const && t.arena == nil {
+			t.resize(t.Shape)
+		}
 	}
 
 	for i, o := range g.Ops {
@@ -235,14 +261,39 @@ func (in *Interpreter) Invoke() error {
 		if o.Op == OpIf {
 			run = in.branch
 		}
+		if k, ok := splitKernels[o.Op]; ok && in.split != nil {
+			run = func(o *OpDesc, ins, outs []*Tensor) error { return k(in.split, o, ins, outs) }
+		}
 		if err := run(o, ins, outs); err != nil {
 			return fmt.Errorf("tflite: op %d (%s): %w", i, o.Op, err)
 		}
+		if in.plan != nil {
+			in.plan.done(i, in.tensors)
+		}
+	}
+	if in.plan != nil && !in.plan.fixed {
+		in.plan.fix(in.tensors)
 	}
 	return nil
 }
 
 type kernel func(o *OpDesc, in, out []*Tensor) error
+
+type splitKernel func(s Splitter, o *OpDesc, in, out []*Tensor) error
+
+func inOrder(k splitKernel) kernel {
+	return func(o *OpDesc, in, out []*Tensor) error { return k(serial{}, o, in, out) }
+}
+
+const minSplit = 1 << 15
+
+func spread(s Splitter, work, n int, part func(lo, hi int)) {
+	if work < minSplit {
+		part(0, n)
+		return
+	}
+	s.Split(n, part)
+}
 
 func activate(v float32, a Activation) float32 {
 	switch a {

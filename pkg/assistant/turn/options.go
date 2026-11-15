@@ -43,6 +43,11 @@ type Arbiter interface {
 	Decide(word string, score float64) bool
 }
 
+type Voices interface {
+	Spoke(at time.Time)
+	Claim(at time.Time) bool
+}
+
 type Recorder interface {
 	Opens(string, int)
 	Frame([]byte)
@@ -64,6 +69,7 @@ type Dependencies struct {
 	HardwareTail       time.Duration
 	Presentation       *Presentation
 	Arbiter            Arbiter
+	Voices             Voices
 	Cancelled, Failure func()
 }
 
