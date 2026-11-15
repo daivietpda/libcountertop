@@ -125,6 +125,7 @@ func record(p Peer) []string {
 		"proto=" + proto,
 		"caps=" + strings.Join(p.Caps, ","),
 		"secure=" + strconv.Itoa(p.Secure),
+		"arbitration=" + strconv.Itoa(p.Arbitration),
 	}
 }
 func (d *Discovery) advertise(ctx context.Context) {
@@ -237,6 +238,9 @@ func parse(e *zeroconf.ServiceEntry, now time.Time) Peer {
 	}
 	if n, err := strconv.Atoi(txt["secure"]); err == nil {
 		p.Secure = n
+	}
+	if n, err := strconv.Atoi(txt["arbitration"]); err == nil {
+		p.Arbitration = n
 	}
 	if p.Name == "" {
 		p.Name = e.Instance

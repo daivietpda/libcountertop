@@ -99,6 +99,8 @@ func (s *Satellite) Turn() *turn.Conversation { return s.turn }
 
 func (s *Satellite) Start(slot int) { s.turn.Start(slot) }
 
+func (s *Satellite) Heard(slot int) { s.turn.Heard(slot) }
+
 func (s *Satellite) AfterTurn(fn func()) {
 	var (
 		once sync.Once

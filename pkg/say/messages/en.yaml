@@ -89,6 +89,11 @@ assistants.group.gemini: Gemini
 assistants.setting.gemini: Gemini wake word
 assistants.group.stopword: Stop word
 assistants.setting.stop_sensitivity: Stop word sensitivity
+assistants.group.arbitration: Arbitration
+assistants.setting.arbitration_wait: Arbitration wait
+assistants.arbitration.value: "{{.N}} ms"
+assistants.setting.arbitration_offset: Arbitration offset
+assistants.arbitration.offset: "{{.N}} dB"
 assistants.setting.buffer: Reply buffer
 assistants.setting.delivery: Response playback
 assistants.setting.follow_up: Follow-up time

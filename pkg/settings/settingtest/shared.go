@@ -212,6 +212,8 @@ var Shared = Coverage{
 		"Wake.Pryon":                "assistants.pryon",
 		"Wake.Stop.Pryon":           "assistants.pryon_stop",
 		"Wake.Gemini":               "assistants.gemini",
+		"Wake.Arbitration":          "assistants.arbitration_wait",
+		"Wake.ArbitrationOffset":    "assistants.arbitration_offset",
 	},
 	ByHand: map[string]string{
 		"HomeAlarm.Hide":      "the home alarm's zone list page, one toggle per discovered zone",

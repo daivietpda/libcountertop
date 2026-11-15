@@ -3,6 +3,7 @@ package level
 import (
 	"log/slog"
 	"math"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -35,6 +36,8 @@ const (
 
 	levelAttack  = 40 * time.Millisecond
 	levelRelease = 180 * time.Millisecond
+
+	overSpan = time.Second
 )
 
 // 16-bit rounding error is spread evenly over one step; its average size is 1/√12 of a step.
@@ -80,6 +83,12 @@ type Leveler struct {
 	shownFloor atomic.Uint32
 	level      atomic.Uint32
 	clipped    atomic.Uint64
+
+	frame   time.Duration
+	overMu  sync.Mutex
+	overs   []float32
+	overAt  int
+	overLen int
 }
 
 func New(c Config) *Leveler {
@@ -104,6 +113,9 @@ func New(c Config) *Leveler {
 		bandFloor: fullScale,
 		lpA:       float32(1 - math.Exp(-2*math.Pi*levelHighHz/rate)),
 		hpA:       float32(1 - math.Exp(-2*math.Pi*levelLowHz/rate)),
+
+		frame: time.Duration(frame * float64(time.Second)),
+		overs: make([]float32, max(int(overSpan.Seconds()*rate)/max(c.Frame, 1), 1)),
 	}
 
 	l.quiet.Store(int32(c.Sensitivity))
@@ -232,11 +244,34 @@ func levelFrom(overDB, quiet, span float64) float64 {
 	return x * x * x * (x*(6*x-15) + 10)
 }
 
+func (l *Leveler) Over(d time.Duration) float64 {
+	l.overMu.Lock()
+	defer l.overMu.Unlock()
+	n := l.overLen
+	if l.frame > 0 {
+		n = min(n, int(d/l.frame))
+	}
+	var loudest float32
+	for i := range n {
+		loudest = max(loudest, l.overs[(l.overAt-1-i+len(l.overs))%len(l.overs)])
+	}
+	return float64(loudest)
+}
+
+func (l *Leveler) remember(over float64) {
+	l.overMu.Lock()
+	defer l.overMu.Unlock()
+	l.overs[l.overAt] = float32(over)
+	l.overAt = (l.overAt + 1) % len(l.overs)
+	l.overLen = min(l.overLen+1, len(l.overs))
+}
+
 func (l *Leveler) publishLevel(rms float32) {
 	over := 0.0
 	if rms > l.bandFloor {
 		over = 20 * math.Log10(float64(rms/l.bandFloor))
 	}
+	l.remember(over)
 	quiet := float64(l.quiet.Load())
 	want := float32(levelFrom(over, quiet, levelTopDB-quiet))
 

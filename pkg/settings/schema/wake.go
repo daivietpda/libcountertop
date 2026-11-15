@@ -8,6 +8,9 @@ type Wake struct {
 	Pryon bool `json:"pryon"`
 
 	Gemini bool `json:"gemini"`
+
+	Arbitration       int `json:"arbitration"`
+	ArbitrationOffset int `json:"arbitration_offset"`
 }
 
 type Stop struct {
@@ -20,11 +23,15 @@ const (
 	StopOff = 1.0
 
 	DefaultStopThreshold = 0.7
+
+	DefaultArbitration   = 100
+	MaxArbitration       = 500
+	MaxArbitrationOffset = 20
 )
 
 func DefaultStop() Stop { return Stop{Threshold: DefaultStopThreshold} }
 
-func DefaultWake() Wake { return Wake{Stop: DefaultStop()} }
+func DefaultWake() Wake { return Wake{Stop: DefaultStop(), Arbitration: DefaultArbitration} }
 
 func (s Stop) Listening() bool { return s.Threshold < StopOff }
 

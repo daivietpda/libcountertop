@@ -90,6 +90,11 @@ assistants.group.gemini: Gemini
 assistants.setting.gemini: Parola di attivazione Gemini
 assistants.group.stopword: Parola di stop
 assistants.setting.stop_sensitivity: Sensibilità parola di stop
+assistants.group.arbitration: Arbitraggio
+assistants.setting.arbitration_wait: Attesa arbitraggio
+assistants.arbitration.value: "{{.N}} ms"
+assistants.setting.arbitration_offset: Correzione arbitraggio
+assistants.arbitration.offset: "{{.N}} dB"
 assistants.setting.buffer: Buffer risposta
 assistants.setting.delivery: Riproduzione risposta
 assistants.setting.follow_up: Tempo per proseguire

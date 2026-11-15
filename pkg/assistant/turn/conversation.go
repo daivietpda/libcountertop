@@ -117,6 +117,7 @@ const graceStart = 750 * time.Millisecond
 type nextTurn struct {
 	slot     int
 	followUp bool
+	heard    time.Time
 }
 
 type reply struct {
@@ -160,7 +161,11 @@ func NewConversation(vs *esphome.VoiceSatellite, options Dependencies) *Conversa
 	return c
 }
 
-const outDepth = 64
+const (
+	outDepth  = 64
+	voiceRate = 16000
+	preRoll   = 250 * time.Millisecond
+)
 
 func (c *Conversation) send(what string, fn func() error) {
 	select {
@@ -240,7 +245,7 @@ func (c *Conversation) Run(ctx context.Context) {
 func (c *Conversation) handle(e event) {
 	switch e.kind {
 	case evStart:
-		c.start(nextTurn{slot: e.slot})
+		c.start(nextTurn{slot: e.slot, heard: e.at})
 
 	case evSpeaking:
 		if c.followUp && c.phase == phaseListening {
@@ -494,7 +499,7 @@ func (c *Conversation) start(n nextTurn) {
 	c.reply = reply{}
 
 	c.arm(c.listenFor(n))
-	c.startAudio(slot)
+	c.startAudio(slot, n.heard)
 	slog.Info("turn started", "slot", slot+1, "phrase", phrase, "follow_up", n.followUp)
 }
 
@@ -706,6 +711,25 @@ func (c *Conversation) tts(data []byte, end bool) {
 
 func (c *Conversation) Start(slot int) { c.post(event{kind: evStart, slot: slot}) }
 
+func (c *Conversation) Heard(slot int) {
+	at := time.Now()
+	if c.options.Arbiter == nil || c.Busy() {
+		c.post(event{kind: evStart, slot: slot, at: at})
+		return
+	}
+	phrase, _ := c.PhraseFor(slot)
+	score := c.source.Over(time.Second)
+	slog.Info("wake score", "over_floor_db", score, "floor_dbfs", c.source.Floor(),
+		"gain_db", c.source.Gain())
+	safe.Go("wake arbitration", func() {
+		if !c.options.Arbiter.Decide(phrase, score) {
+			c.options.Presentation.Elsewhere()
+			return
+		}
+		c.post(event{kind: evStart, slot: slot, at: at})
+	})
+}
+
 func (c *Conversation) Cancel() { c.post(event{kind: evCancel}) }
 
 func (c *Conversation) Listen() (release func()) {
@@ -724,12 +748,12 @@ func audioSettings() *api.VoiceAssistantAudioSettings {
 	}
 }
 
-func (c *Conversation) startAudio(slot int) {
+func (c *Conversation) startAudio(slot int, heard time.Time) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	c.stopAudio = func() { cancel(); <-done }
 
-	safe.Go("turn audio", func() { defer close(done); c.stream(ctx, slot) })
+	safe.Go("turn audio", func() { defer close(done); c.stream(ctx, slot, heard) })
 }
 
 func (c *Conversation) stopStreaming() {
@@ -742,13 +766,17 @@ func (c *Conversation) stopStreaming() {
 	c.send("end of audio", c.vs.EndAudio)
 }
 
-func (c *Conversation) stream(ctx context.Context, slot int) {
+func (c *Conversation) stream(ctx context.Context, slot int, heard time.Time) {
 	frames, unlisten := c.source.Listen("turn")
 	defer unlisten()
 
 	buf := make([]byte, 0, 320*2)
 
-	pre := c.source.Recent(250 * time.Millisecond)
+	lead := preRoll
+	if !heard.IsZero() {
+		lead += time.Since(heard)
+	}
+	pre := c.source.Recent(lead)
 	if c.options.Words.Tones(slot) {
 		pre = nil
 	}
@@ -759,7 +787,7 @@ func (c *Conversation) stream(ctx context.Context, slot int) {
 		c.options.Recorder.Frame(buf)
 
 		c.sendAudio(buf)
-		slog.Debug("sent audio history", "ms", len(pre)*1000/16000)
+		slog.Debug("sent audio history", "ms", len(pre)*1000/voiceRate)
 	}
 
 	var held int

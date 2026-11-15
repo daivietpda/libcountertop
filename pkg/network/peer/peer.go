@@ -37,19 +37,20 @@ func (s Standing) String() string {
 func (s Standing) Trusted() bool { return s == Open || s == Home }
 
 type Peer struct {
-	ID       string
-	Name     string
-	Model    string
-	Board    string
-	Project  string
-	Version  string
-	Caps     []string
-	Host     string
-	Addrs    []net.IP
-	Port     int
-	Secure   int
-	Standing Standing
-	Seen     time.Time
+	ID          string
+	Name        string
+	Model       string
+	Board       string
+	Project     string
+	Version     string
+	Caps        []string
+	Host        string
+	Addrs       []net.IP
+	Port        int
+	Secure      int
+	Arbitration int
+	Standing    Standing
+	Seen        time.Time
 }
 
 func (p Peer) Video() bool { return slices.Contains(p.Caps, "video") }

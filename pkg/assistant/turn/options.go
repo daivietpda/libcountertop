@@ -11,6 +11,8 @@ import (
 type Microphone interface {
 	Listen(string) (<-chan []int16, func())
 	Recent(time.Duration) []int16
+	Over(time.Duration) float64
+	Floor() float64
 	Gain() float64
 	SetAdapting(bool)
 	Clipped() uint64
@@ -37,6 +39,10 @@ type Sound interface {
 	Duck(bool)
 }
 
+type Arbiter interface {
+	Decide(word string, score float64) bool
+}
+
 type Recorder interface {
 	Opens(string, int)
 	Frame([]byte)
@@ -57,6 +63,7 @@ type Dependencies struct {
 	Muted              func() (bool, error)
 	HardwareTail       time.Duration
 	Presentation       *Presentation
+	Arbiter            Arbiter
 	Cancelled, Failure func()
 }
 

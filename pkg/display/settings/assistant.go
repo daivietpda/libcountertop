@@ -2,11 +2,13 @@ package settings
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ygelfand/libcountertop/pkg/assistant/arbitration"
 	"github.com/ygelfand/libcountertop/pkg/assistant/turn"
 	"github.com/ygelfand/libcountertop/pkg/display/menu"
 	"github.com/ygelfand/libcountertop/pkg/display/shell"
@@ -44,6 +46,7 @@ type AssistantDependencies struct {
 	Pryon       Switch
 	PryonStop   GatedSwitch
 	Gemini      Switch
+	Arbitration *arbitration.Setting
 	Preferences Preferences
 	Models      func() []wake.Model
 	Phrases     func() []string
@@ -147,6 +150,10 @@ func (p *AssistantPages) Page() *shell.Page {
 					}
 				})
 			}
+			if a := p.options.Arbitration; a != nil {
+				more, taps := arbitrationRows(*a)
+				rows, acts = append(rows, more...), append(acts, taps...)
+			}
 			return rows, acts
 		},
 	}
@@ -172,6 +179,58 @@ func (p *AssistantPages) Hearing(slot int) string {
 	}
 	return ""
 }
+
+func arbitrationRows(a arbitration.Setting) ([]menu.Row, []func(int)) {
+	now := a.Read()
+	waitValue := say.T("assistants.off")
+	if now.Arbitration > 0 {
+		waitValue = say.F("assistants.arbitration.value", map[string]any{"N": now.Arbitration})
+	}
+	wait, setWait := steppedRow(
+		say.T("assistants.setting.arbitration_wait"), waitValue,
+		arbitration.Waits(), now.Arbitration,
+		func(v int) error { w := a.Read(); w.Arbitration = v; return a.Save(w) },
+	)
+	offset, setOffset := steppedRow(
+		say.T("assistants.setting.arbitration_offset"),
+		say.F(
+			"assistants.arbitration.offset",
+			map[string]any{"N": fmt.Sprintf("%+d", now.ArbitrationOffset)},
+		),
+		arbitration.Offsets(),
+		now.ArbitrationOffset,
+		func(v int) error { w := a.Read(); w.ArbitrationOffset = v; return a.Save(w) },
+	)
+	return []menu.Row{wait, offset}, []func(int){setWait, setOffset}
+}
+
+func steppedRow(
+	label, value string,
+	stops []int,
+	now int,
+	save func(int) error,
+) (menu.Row, func(int)) {
+	steps := menu.Steps(len(stops))
+	nearest := 0
+	for i, v := range stops {
+		if abs(v-now) < abs(stops[nearest]-now) {
+			nearest = i
+		}
+	}
+	return menu.Row{
+		Label: label,
+		Kind:  menu.Slider,
+		Level: steps.Level(nearest),
+		Snap:  steps.Snap,
+		Value: value,
+	}, func(level int) {
+		if err := save(stops[steps.Index(level)]); err != nil {
+			slog.Error("saving a setting failed", "setting", label, "err", err)
+		}
+	}
+}
+
+func abs(n int) int { return max(n, -n) }
 
 func (p *AssistantPages) Slot(slot int) *shell.Page {
 	return &shell.Page{
