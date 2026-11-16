@@ -22,12 +22,17 @@ var scaleSteps = menu.Steps(
 	(schema.LovelaceScaleMax-schema.LovelaceScaleMin)/schema.LovelaceScaleStep + 1,
 )
 
-func (f *Feature) Rows(saver bool) ([]menu.Row, []func(int)) {
-	picks := []pick{
-		{"user", gogui.IconUser, false},
-		{"dashboard", gogui.IconLayout, false},
-		{"view", gogui.IconPictureSquare, false},
-		{"scale", gogui.IconScale, true},
+func (f *Feature) Rows(home, saver bool) ([]menu.Row, []func(int)) {
+	if !home && !saver {
+		return nil, nil
+	}
+	picks := []pick{{"user", gogui.IconUser, false}}
+	if home {
+		picks = append(picks,
+			pick{"dashboard", gogui.IconLayout, false},
+			pick{"view", gogui.IconPictureSquare, false},
+			pick{"scale", gogui.IconScale, true},
+		)
 	}
 	if saver {
 		picks = append(picks,

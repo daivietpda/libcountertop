@@ -509,7 +509,7 @@ type Dependencies struct {
 	Saver           SaverMode
 	Standby         func() bool
 	Visuals         Visuals
-	Lovelace        func(saver bool) ([]menu.Row, []func(int))
+	Lovelace        func(home, saver bool) ([]menu.Row, []func(int))
 	Reload          func()
 	UI              *widgets.UI
 }
@@ -637,8 +637,7 @@ func (view *Renderer) dashboardRows() ([]menu.Row, []func(int)) {
 		add(view.options.Visuals.LocalRows())
 	case view.options.Engine.Speaks() == schema.HomeLovelace && view.options.Lovelace != nil:
 		add(view.saverRows())
-		saver := view.options.Saver
-		add(view.options.Lovelace(saver != nil && saver.Saver() == schema.SaverLovelace))
+		add(view.options.Lovelace(true, view.lovelaceSaver()))
 	case view.options.Engine.Tessera():
 		add(view.saverRows())
 		add(view.tesseraRows())
@@ -646,10 +645,26 @@ func (view *Renderer) dashboardRows() ([]menu.Row, []func(int)) {
 		clock, open := view.options.Visuals.CompactClockRow()
 		add([]menu.Row{clock}, []func(int){open})
 		add(view.ringsRows())
+		add(view.saverRows())
+		add(view.lovelaceSaverRows())
 	default:
 		add(view.nativeRows())
+		add(view.saverRows())
+		add(view.lovelaceSaverRows())
 	}
 	return rows, taps
+}
+
+func (view *Renderer) lovelaceSaver() bool {
+	saver := view.options.Saver
+	return saver != nil && saver.Saver() == schema.SaverLovelace
+}
+
+func (view *Renderer) lovelaceSaverRows() ([]menu.Row, []func(int)) {
+	if view.options.Lovelace == nil {
+		return nil, nil
+	}
+	return view.options.Lovelace(false, view.lovelaceSaver())
 }
 
 func (view *Renderer) modeLine(
@@ -699,17 +714,21 @@ func (view *Renderer) saverRows() ([]menu.Row, []func(int)) {
 		taps []func(int)
 	)
 	if saver := view.options.Saver; saver != nil {
+		modes := schema.SaverModes()
+		if !engine.Tessera() {
+			modes = slices.DeleteFunc(modes, func(m schema.SaverMode) bool { return m == schema.SaverTessera })
+		}
 		row := settings.ModeRow(
 			view.options.Marks,
 			say.T("home.saver"),
-			schema.SaverModes(),
+			modes,
 			saver.Saver(),
 		)
 		row.Glyph = gogui.IconMoon
-		pick := settings.ModePick(schema.SaverModes(), saver.SetSaver)
+		pick := settings.ModePick(modes, saver.SetSaver)
 		if engine.Firmware() && view.options.Standby != nil && !view.options.Standby() {
 			row.Hint = say.T("home.saver.off")
-			pick = settings.ModePick(schema.SaverModes(), func(m schema.SaverMode) {
+			pick = settings.ModePick(modes, func(m schema.SaverMode) {
 				if m != schema.SaverTessera {
 					saver.SetSaver(m)
 				}

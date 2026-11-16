@@ -13,7 +13,7 @@ func standby(v *firmwareview.View) func() bool {
 	return v.Rests
 }
 
-func lovelaceRows(f *lovelaceview.Feature) func(saver bool) ([]menu.Row, []func(int)) {
+func lovelaceRows(f *lovelaceview.Feature) func(home, saver bool) ([]menu.Row, []func(int)) {
 	if f == nil {
 		return nil
 	}

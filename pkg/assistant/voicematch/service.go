@@ -129,11 +129,13 @@ func (s *Service) Actions() []*esphome.Action {
 		Name:        "voice_profiles",
 		Description: "Replace the voice profiles this device matches speakers against.",
 		Answers:     true,
-		Args: []esphome.Arg{{
-			Name:        "profiles",
-			Type:        esphome.ArgString,
-			Description: "JSON list of profiles, each with id, name, person and print.",
-		}},
+		Args: []esphome.Arg{
+			{
+				Name:        "profiles",
+				Type:        esphome.ArgString,
+				Description: "JSON list of profiles, each with id, name, person and prints, one voiceprint per enrolment take.",
+			},
+		},
 		Run: func(c esphome.Call) (any, error) {
 			var ps []Profile
 			if err := json.Unmarshal([]byte(c.String("profiles")), &ps); err != nil {
@@ -257,7 +259,7 @@ func (s *Service) Enroll(
 	if err := errors.Join(errs...); err != nil {
 		return Profile{}, Match{}, err
 	}
-	profile := Profile{ID: id, Name: name, Person: person, Print: average(prints)}
+	profile := Profile{ID: id, Name: name, Person: person, Prints: prints}
 	print, err := s.Embed(last)
 	if err != nil {
 		return Profile{}, Match{}, err
